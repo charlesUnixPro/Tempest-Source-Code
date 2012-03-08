@@ -20,11 +20,18 @@
 ;     interboard cable failing. Check that first, as it's a lot easier to 
 ;     fix -- Nick).
 ;
+
+
+
+
 ;   During self test screen 1, the code does a 24 bit divide on 16 bit
 ;   numbers [0/0, 1/1, 2/2, ... ffff/ffff], compares the sign of the
 ;   result to the factors. This works up til $8000, at which point
 ;   a M error is diagnosed. I do not know if this is expected behavior,
 ;   or a bug in the math box code.
+;
+;   The test code changed in version 2, and no longer displays this
+;   behavior, so I assume that this was a bug in the test code.
 ;
 
 ;
@@ -13013,7 +13020,7 @@ Lb367
 	.byte	$0b
 	.byte	$07
 	.byte	$03
-	.byte	$3f	; XXX bug 1 this is the item loaded in y at b467
+	.byte	$3f
 .if VER=1
 	.byte	$1e
 .endif
@@ -15438,10 +15445,7 @@ Lc30d
 	sta     y_out_h
 	ldx     #x_out_l
 	jsr     vapp_centre_draw_to_X
-; Bug 1 XXX vidptr_bookmark is apparently a bookmap of vidptr; bug 1 occurs when
-; it is used to update a displya list, but this code that sets never 
-; gets called, so the pointer is zero, and corruption occurs.
-	lda     vidptr_l		;bug 1 XXX this code is never executed
+	lda     vidptr_l
 	sta     vidptr_bookmark_l
 	lda     vidptr_h
 	sta     vidptr_bookmark_h
@@ -15652,10 +15656,6 @@ Lc453
 
 
 	.local
-
-
-; Bug 1 -- I beleive that this code is returning an incorrect value, which is stored in L0110
-; Piracy protection or mathbox bug?
 
 ; Returns an updated fscale in A
 
