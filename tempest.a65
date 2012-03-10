@@ -1186,6 +1186,9 @@ vid_coins_shadow		.ds	1		; b4
 
 copyr_cksum	.ds	1		; b5
 
+; Anti-piracy. When the copyright message is copied to video ram, the 
+; destination address is stored here for later checksumming of the message 
+; in video ram.
 copyr_vid_loc	.ds	2		; b6 b7
 
 		.ds	1		; b8
@@ -10884,13 +10887,23 @@ La888
 
 
 
-; XXX
+
+
+
+
+; XXX	What does this byte do?
+
 .if (VER=1)|(VER=2)
 	.byte   $b2	; a8af
-.endif
+.endif	; (VER=1)|(VER=2)
+
 .if (VER=3)
 	.byte   $e1	; a8af
-.endif
+.endif	; (VER=3)
+
+
+
+
 
 coinage_msgs
 	.byte   _msg_free_play ; FREE PLAY
@@ -10926,9 +10939,11 @@ La8b4
 	lda     char_jsrtbl
 	sta     vecram_2fa6
 	sta     vecram_2fa8
+
 .if VER=3
 La8e7
-.endif
+.endif	; VER=3
+
 	jsr     show_coin_stuff
 ?f2
 	lda     #$01
@@ -11236,12 +11251,13 @@ game_mode_msg_game_over
 
 ?f1
 	jsr     show_plyno
+
 .if (VER=1)|(VER=2)
 	jmp     La8b4
-.endif
+.endif	; (VER=1)|(VER=2)
 .if VER=3
 	jmp     La8e7
-.endif
+.endif	; VER=3
 
 
 	.local
@@ -11390,17 +11406,44 @@ vapp_vcentre_20
 
 
 	.local
+
+;
+; vapp_msg
+; vapp_msg_at_y
+;
+; Append a message to the display list
+;
+; In:
+;  A: y coordinate of message (vapp_msg_at_y only, vapp_msg gets the coordinate
+;     from Ld121)
+;  X: message number; an index into the message table pointed at by strtbl
+;
+; Out:
+;  The display list is appended with:
+;    vcentre_20	(2 bytes)
+;    vscale (2 bytes)
+;    vldraw (4 bytes)
+;    vstat (2 bytes)
+;    number of chars in msg * vjsr (2 bytes)
+
 vapp_msg
-	lda     Ld121+1,x
+	lda     Ld121+1,x	; Get the Y coordinate of the message
 vapp_msg_at_y
-	stx     L35
-	sta     L2b
+	stx     L35		; Save the message number
+	sta     L2b		; Save the Y coordinate
+
+	; Lookup the message in strtbl, setting ptr1 to the msg data.
+	; The msg data is formatted as an X coord. byte, followed by
+	; offsets into char_jsrtbl, with the last byte marked by the
+	; _eos bit being set.
+
 	ldy     L35
 	lda     (strtbl),y
 	sta     ptr1_l
 	iny
 	lda     (strtbl),y
 	sta     ptr1_h
+
 ; If we're displaying the copyright message, save the location in video RAM
 ; where it's displayed, for the checksumming code at Lb1df and Lb27d.
 	cpx     #_msg_copyright ; "(c) MCMLXXX ATARI"
@@ -11410,49 +11453,85 @@ vapp_msg_at_y
 	lda     vidptr_h
 	sta     copyr_vid_loc+1
 ?f1
+
+	; Y is the offset into the msg
+
 	ldy     #$00
+
+	; Store the message X coordinate in L2a
+
 	lda     (ptr1),y
 	sta     L2a
+
 	; Append a vcentre to the display list
 	jsr     vapp_vcentre_20
-Lab3b
+
+?vapp_common
 	; Set color and intensity to 0
 	lda     #0
 	sta     draw_z
 
-	lda     #$01
+	; Append a vscale to the display list
+
+	lda     #1
 	sta     curscale	; b scale
 	jsr     vapp_scale_b
+
+	; Move to the X/Y coords.
+
 	lda     L2a		; X coord
 	ldx     L2b		; Y coord
 	jsr     vapp_ldraw_XY
-	ldy     L35
-	lda     (strtbl),y
+
+
+	; Set ptr1 to the msg
+
+	ldy     L35		; The msg number
+	lda     (strtbl),y	; Lookup the msg in strtbl, set ptr1 to the msg
 	sta     ptr1_l
 	iny
 	lda     (strtbl),y
 	sta     ptr1_h
-	ldx     L35
-	lda     Ld121,x
+
+	; Get the message color
+
+	ldx     L35		; The msg number
+	lda     Ld121,x		; msg color and size
 	pha
-	lsr     a
+	lsr     a		; Color is in the high nibble; get it
 	lsr     a
 	lsr     a
 	lsr     a
 	tay		; Y is the color index
 	jsr     vapp_setcolor
+
+	; Get the message size
+
 	pla
 	and     #$0f
 	jsr     vapp_setscale
-	ldy     #$01
-	lda     #$00
+
+	; Copy the message
+
+	ldy     #1	; Offset of the first byte of the text (X coord is at offset 0)
+
+	lda     #0	; vidptr offset
 	sta     L2a
+
+	; Loop over the msg until the _eos bit is seen
+
 ?b2
+	; Get the next byte of message
+
 	lda     (ptr1),y
 	sta     L2b
-	and     #$7f
+	and     #$7f	; Mask off _eos
 	iny
 	sty     L2c
+
+	; Lookup the address of the display list subroutine that draws the 
+	; character
+
 	tax
 	lda     char_jsrtbl,x
 	ldy     L2a
@@ -11462,9 +11541,16 @@ Lab3b
 	sta     (vidptr),y
 	iny
 	sty     L2a
+
+
 	ldy     L2c
+
+	; Check for _eos bit, branch if not set
+
 	bit     L2b
 	bpl     ?b2
+
+	; Adjust vidptr
 	ldy     L2a
 	dey
 	jmp     inc_vidptr
@@ -11480,7 +11566,7 @@ Lab98
 	sta     L2a
 	lda     #$00
 	sta     L2b
-	beq     Lab3b	; Always branch
+	beq     ?vapp_common	; Always branch
 
 
 
@@ -12534,26 +12620,35 @@ Lb1b6
 ; Anti-piracy provision.  Checksum the video RAM that holds the copyright
 ; message.  See also Lb27d and La581.
 ;Lb1df
-	ldy     #$27
-	lda     #$0e
+	ldy     #copyright_test_offset	; offset of last byte to be checksummed
+	lda     #$0e	; Checksum seed
 	sec
 ?b2
-	sbc     (copyr_vid_loc),y
-	dey
-	bpl     ?b2
-	tay
-	beq     ?f3
+	sbc     (copyr_vid_loc),y	; sum a byte
+	dey				; decrement number of bytes
+	bpl     ?b2			; branch if not done
+	tay				; checksum to Y for some reason?
+
+	; For some reason, allow 2 different checksums...
+	; In VER 1, #e5 or $2a
+	; In VER 2 or 3, $e5 or $29
+
+	beq     ?f3			; ???
 	eor     #$e5
 ?f3
 	beq     ?f4
+
 .if VER=1
 	eor     #$2a
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	eor     #$29
-.endif
+.endif	; (VER=2)|(VER=3)
+
+	; If the checksum is wrong, this will set copyr_vid_cksum2 to non-zero
 ?f4
 	sta     copyr_vid_cksum2
+
 ?f5
 	lda     #_dblduf_reg_0
 	jsr     dblbuf_done
@@ -12635,14 +12730,15 @@ game_mode_00
 ; Anti-piracy provision.  When not playing, checksum the video RAM that
 ; holds the copyright message.  See also Lb1df and La581.
 ;Lb27d
-	lda     #$f2
+	lda     #$f2		; Checksum seed
 	clc
-	ldy     #$27
+	ldy     #copyright_test_offset	; offset of last byte to be checksummed
 ?b1
-	adc     (copyr_vid_loc),y
-	dey
-	bpl     ?b1
-	sta     copyr_vid_cksum1
+	adc     (copyr_vid_loc),y	; sum a byte
+	dey				; decrement number of bytes
+	bpl     ?b1			; Branch if not done
+	sta     copyr_vid_cksum1	; If the checksum is wrong, this will 
+					; set copyr_vid_cksum1 to non-zero
 ; End anti-piracy provision.
 ?f2
 	lda     #_dblduf_reg_0
@@ -13023,11 +13119,10 @@ Lb367
 	.byte	$3f
 .if VER=1
 	.byte	$1e
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	.byte	$1d
-.endif
-
+.endif ; (VER=2)|(VER=3)
 
 
 
@@ -18954,6 +19049,19 @@ msg_es_copyright
 	; -45 "(c) MCMLXXX ATARI"
 	.byte	<-45,_cr,__,_M,_C,_M,_L,_X,_X,_X,__,_A,_T,_A,_R,_I|_eos
 
+?copyright_len = *-msg_en_copyright-1    ; -1 is the Y coordinate
+; When vapp_msg puts this message in the display list, it will
+; generate:
+;   vcentre     2 bytes
+;   vscale      2
+;   vldraw      4
+;   vstat	2
+;   vjsr        2 * number of chars
+;
+?nbytes=2+2+2+4+(2*?copyright_len)
+; offset of last byte to test for anti-piracy copyright text checksum test 
+copyright_test_offset	=	?nbytes-1
+
 msg_en_credits
 msg_fr_credits
 	; -96 "CREDITS "
@@ -19097,10 +19205,10 @@ read_optsws
 	sta     strtbl+1
 .if VER=1
 	jsr     get_diff_bits_v1
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	jsr     get_diff_bits_v2
-.endif
+.endif	; (VER=2)|(VER=3)
 	sta     diff_bits
 	rts
 ; Table mapping bonus life setting values to tens of thousands of points
@@ -19389,10 +19497,10 @@ game_mode_service
 	jsr     show_coin_stuff
 .if VER=1
 	jsr     vapp_test_i3_v1
-.endif
+.endif ; VER=1
 .if (VER=2)|(VER=3)
 	jsr     vapp_test_i3_v2
-.endif
+.endif	; (VER=2)|(VER=3)
 	jsr     vapp_stats
 	lda     init_lives
 	sta     loopidx
@@ -19658,11 +19766,11 @@ reset
 .if VER=1
 	lda	#0
 	tax
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	inx
 	txa
-.endif
+.endif	; (VER=2)|(VER=3)
 	tay
 ?b1
 	sty     memory_test_ptr_l
@@ -19685,7 +19793,7 @@ reset
 	bcc     ?b1
 .if VER=1
 	sta     memory_test_ptr_l
-.endif
+.endif	; VER=1
 	sta	memory_test_ptr_h
 	
 ; init pokeys
@@ -19725,18 +19833,19 @@ reset
 .if (VER=2)|(VER=3)
 	lda	#$10
 	sta	vid_coins_shadow
-.endif
+.endif	; (VER=2)|(VER=3)
 	jsr     Lde11
 	jsr     init_hs
 .if (VER=2)|(VER=3)
 	jsr	Lc16e
-.endif
+.endif	; (VER=2)|(VER=3)
 	cli
 	jmp     main_loop
 
+; XXX
 .if (VER=2)|(VER=3)
 	.byte	$a0
-.endif
+.endif	; (VER=2)|(VER=3)
 
 
 
@@ -20133,10 +20242,10 @@ selftest_main_loop
 watchdog_hack
 .if VER=1
 	jmp	*
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	bne	*
-.endif
+.endif	; (VER=2)|(VER=3)
 
 
 ; Loaded to colour RAM; see Lda75
@@ -20345,7 +20454,7 @@ selftest_5
 	; Append a vjsr vg_sub_image_selftest_5 to the display list
 	ldax_im	vg_sub_image_selftest_5	; rectangular grid
 	jmp	vapp_vjsr_AX
-.endif
+.endif	; VER=1
 
 .if (VER=2)|(VER=3)
 	ldx	#<vg_sub_image_selftest_5
@@ -20368,7 +20477,7 @@ selftest_2 ; v2
         bpl     ?b1
         rts
 
-.endif ; VER 2, 3
+.endif ; (VER=2)|(VER=3)
 
 
 .if VER=1
@@ -20413,7 +20522,7 @@ selftest_3
 	ldax_im	vg_sub_image_crosshair
 .if VER=1
 	jmp	vapp_vjsr_AX
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	jsr	vapp_vjsr_AX   
 	lda	timectr
@@ -20423,7 +20532,7 @@ selftest_3
 	jsr	vapp_scale_lb
 	ldax_im	L34aa
 	jmp	vapp_vjsr_AX
-.endif ; VER 2, 3
+.endif ; (VER=2)|(VER=3)
 
 
 ; Selftest sound table of some sort - see Ldba7
@@ -20499,6 +20608,7 @@ selftest_1 ; v2
 	bpl	?f2
 	stx	L2f
 ?f2
+; This code is in VER=1 at Ldb6b_v1
 	sta	pokey2_rescan
 	lda     pokey2_zap_fire_starts		; zap fire start1p start2p  buttons
 	and	#$78
@@ -20522,7 +20632,7 @@ selftest_1 ; v2
 	ldx     #$f0 ; -16
 	jsr     vapp_test_ibits_v2
 	ldy     zap_fire_new
-.endif ; VER=2,3
+.endif ; (VER=2)|(VER=3)
 
 
 .if VER=1
@@ -20555,10 +20665,10 @@ zero_pokey_sound
 .if VER=1
 selftest_1 ; v1
 	jsr     Ldb6b_v1	; Look at buttons, update spinner display
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	jsr     vapp_test_ibmove_v2	; Look at buttons, update spinner display
-.endif
+.endif	; (VER=2)|(VER=3)
 	lda     spinner_abs
 	and     #$10
 	beq     ?f2
@@ -20598,10 +20708,10 @@ selftest_1 ; v1
 	lda     #$0c ; 12, 12	; X coord
 .if VER=1
 	ldx	#$0c		; Y coord
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	tax
-.endif
+.endif	; (VER=2)|(VER=3)
 	jsr     vapp_ldraw_XY
 	ldx     L38
 ?f4
@@ -20609,7 +20719,7 @@ selftest_1 ; v1
 	bpl     ?b3
 .if VER=1
 	jsr     test_mathbox
-.endif
+.endif	; VER=1
 	; Append a vcentre to the display list
 	jsr	vapp_vcentre_40
 	lda     #$00		; X coord
@@ -20639,7 +20749,7 @@ selftest_1 ; v1
 
 .if VER=1
 	rts
-.endif
+.endif	; VER=1
 
 .if (VER=2)|(VER=3)
 	ldx	#$ac
@@ -20650,7 +20760,7 @@ selftest_1 ; v1
 	ldx	spinner_sine,y
 	ldy	#$c0
 	jmp	vapp_ldraw_xyz
-.endif
+.endif	; (VER=2)|(VER=3)
 
 
 ?error_codes
@@ -20707,7 +20817,7 @@ test_mathbox
 	inc	L78		; Mathbox test fail
 	jmp	?l1
 
-.endif ; v1
+.endif ; VER=1
 
 ; Fails with:
 ;   divide resul:t Y is FF, A is FF
@@ -20749,7 +20859,7 @@ divide
 .if (VER=2)|(VER=3)
 	sty	draw_z
 	sty	secs_avg_h
-.endif
+.endif	; (VER=2)|(VER=3)
 	sta	mb_set_dividend_m
 	stx	mb_set_dividend_h
 
@@ -20762,14 +20872,14 @@ divide
 	sta	mb_set_divide_width
 	; cmd_14 R10 / R7
 	sta	mb_cmd_divide
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	; Set step counter to 16
 	ldx	#16
 	stx	mb_set_divide_width
 	; cmd_14 R10 / R7
 	stx	mb_cmd_divide
-.endif
+.endif	; (VER=2)|(VER=3)
 
 ; R12 = R10				; low and middle of dividend
 ; q = R11				; high of dividend
@@ -20809,7 +20919,7 @@ divide
 .if VER=1
 	; Timeout ?
 	ldx	#$64
-.endif
+.endif	; VER=1
 ?b1
 	dex
 	bmi	?f2
@@ -20856,7 +20966,7 @@ vapp_test_ibits_v2
 	dec	loopidx
 	bpl	?loop
 	rts
-.endif ; VER=2,3
+.endif ; (VER=2)|(VER=3)
 
 
 	.local
@@ -20914,7 +21024,7 @@ vapp_stats
 	sta draw_z        
 
 	sta secs_avg_h      
-.endif
+.endif	; VER=1
 	; draw the "SECONDS ON", "SECONDS PLAYED", etc, labels
 
 	; Append a vjsr vg_sub_image_selftest_labels to the display list
@@ -20927,7 +21037,7 @@ vapp_stats
 	sta     ptr1_h
 .if VER=1
 	lda	#4
-.endif
+.endif	; VER=1
 	sta     loopidx
 ?loop
 	ldy     #$00
@@ -20980,10 +21090,10 @@ vapp_stats
 
 .if VER=1
 	.byte	$ee
-.endif
+.endif	; VER=1
 .if (VER=2)|(VER=3)
 	.byte	$73
-.endif
+.endif	; (VER=2)|(VER=3)
 
 
 	.local
@@ -21645,7 +21755,7 @@ vapp_digits
 
 .if VER=1
 	.dc	30 0
-.endif
+.endif	; VER=1
 
 
 .if (VER=2)|(VER=3)
@@ -21668,7 +21778,9 @@ spinner_cosine
 	.byte	$00, $f4, $ea, $e2, $e0, $e2, $ea, $f4
 	.byte	$00, $0c, $16, $1e, $00
 	.byte 	0
-.endif
+.endif	; (VER=2)|(VER=3)
+
+
 vec_nmi	.word	nmi_irq_brk
 vec_res	.word	reset
 vec_brk_irq	.word	nmi_irq_brk
