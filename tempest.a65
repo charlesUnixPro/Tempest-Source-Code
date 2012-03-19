@@ -736,12 +736,15 @@ earom_rd = $6050	; EEPROM read
 * = 0
 page0 = *
 
+;
 ; XXX this forces ATASM to generate a full 65K image; this means that od
 ; shows the correct address
-.if 1
+;
+
+* = 0
 	.byte	0
 * = 0
-.endif
+
 
 ;
 ; game_state
@@ -807,19 +810,6 @@ test_state_diag_grid	=	4
 ;
 
 game_mode	.ds	1
-
-_game_mode_00	=	$00	; 0
-_game_mode_service	=	$02	; 1
-_game_mode_04	=	$04	; 2
-_game_mode_enter_initials	=	$06	; 3  Enter high score initials
-_game_mode_copyright	=	$08	; 4  Copyright
-_game_mode_high_scores	=	$0a	; 5  high scores
-_game_mode_msg_game_over	=	$0c	; 6  game over
-_game_mode_msg_play	=	$0e	; 7  play
-_game_mode_msg_press_start	=	$10	; 8  press start
-_game_mode_logo_start	=	$12	; 9 
-_game_mode_logo_zoom	=	$14	; 10  zoom in on logo
-_game_mode_msg_2_credit_minimum	=	$16	; 11  insert coins
 
 
 ;   Memory test routines overload addrs 0 and 1
@@ -1348,14 +1338,14 @@ n_fuzzballs	.ds	1			; 146
 ; L9b5a uses this to update pulsing.
 ; L9b8c/L9b94 negate this value when pulsing hits $0f and $c1, ascending and
 ; descending, respectively.
-; eact_26 uses this and pulsing to set a conditional.
+; p_chk_pulse uses this and pulsing to set a conditional.
 pulse_beat	.ds	1			; 147
 ; Pulsar-pulsing variable.
 ; Set to $ff during init.
 ; Once per cycle (after all enemy movement has occurred), the computation
 ; pulsing += pulse_beat is done, and if the high bit of pulsing goes from 0 to 1
 ; because of this, sound_pulsar is called.  (See L9b56.)
-; pulsing is used at L9b7c and in enemy action $26 (eact_26).  It's also
+; pulsing is used at L9b7c and in enemy action $26 (p_chk_pulse).  It's also
 ; checked at L9ce4 and Lb3aa and Lb71d/Lb726.
 pulsing		.ds	1			; 148
 ; Vector of what tankers can carry.
@@ -1549,7 +1539,7 @@ L028a		.ds	n_enemies_on_screen
 
 ; Current movement pcode pc for enemies, indexed by enemy number
 enm_move_pc	.ds	n_enemies_on_screen
-L0298		.ds	n_enemies_on_screen
+p_var		.ds	n_enemies_on_screen
 enemy_along_lsb	.ds	n_enemies_on_screen
 shot_delay	.ds	n_enemies_on_screen
 
@@ -2154,8 +2144,8 @@ vg_reset = $5800
 stat = 2
 
 	.macro	vscale	; b, l
-        .byte   %2
-        .byte   _vg_opc_vscale+%1
+        .byte	%2
+        .byte	_vg_opc_vscale+%1
 	.endm
 
 	.macro	vjsr	; addr
@@ -6686,7 +6676,7 @@ start_level
 	lda	#0
 	sta	L0106
 	sta	y_scale_2_l
-	lda	#_game_mode_00
+	lda	#_game_mode_initialize
 	sta	game_mode
 	rts	
 
@@ -8143,13 +8133,21 @@ L97f8
 
 
 	.local
+;;;
+;;; create_enemies
+;;;
+
 create_enemies
-	ldy     #$00
+	ldy     #0
 	sty     L014f
+
 	; Get # of enemies in the tube
+
 	lda     enemies_in
 	clc
+
 	; Add with the # of enemies at the top of the tube
+
 	adc     enemies_top
 	cmp     max_enm
 	bcc     ?f1
@@ -8163,9 +8161,12 @@ create_enemies
 	sty     L2f
 
 	; Go through all of the countdown positions for an enemy to appear.
+
 	ldx     #$3f
-?b3
+
 	; No enemy, next
+
+?b3
 	lda     pending_vid,x
 	beq     ?f8
 	bit     L2f
@@ -8182,7 +8183,7 @@ create_enemies
 	bne     ?f5
 	ldy     pending_seg,x
 	lda     L014f
-	ora     L014f
+	ora     L014f		; XXX wierd
 ;L98e6
 	and     Lca38,y
 	beq     ?f5
@@ -8561,11 +8562,11 @@ L9aee
 ; Values for L2d, per-enemy-type.  See L9af3.
 ; I think these are the initial movement p-code pc values.
 ; The flipper value is mostly ignored, using flipper_move instead.
-?t1	.byte	$07 ; flipper
-	.byte	$72 ; pulsar
-	.byte	$07 ; tanker
-	.byte	$00 ; spiker
-	.byte	$61 ; fuzzball
+?t1	.byte	m_l_move_up-m_origin	; flipper
+	.byte	m_l_pulsar-m_origin	; pulsar
+	.byte	m_l_move_up-m_origin	; tanker
+	.byte	m_l_spiker-m_origin	; spiker
+	.byte	m_l_fuzzball-m_origin	; fuzzball
 
 ; Values for L2c, per-enemy-type.  See code at L9a87 and the fragments it
 ; branches to.  This ends up in the L028a vector for the enemy.
@@ -8606,12 +8607,12 @@ move_enemies
 	ldx     loopidx
 	lda     enemy_along,x
 	beq     ?f3
-	lda     #$01
+	lda     #1
 	sta     pcode_run
 	lda     enm_move_pc,x
 	sta     pcode_pc
 ; This appears to be a p-code engine!
-; The engine's pc is pcode_pc, with the code itself at La0f7.  The jump
+; The engine's pc is pcode_pc, with the code itself at m_origin.  The jump
 ; table at L9ba2 and the code it points to determines the actions of
 ; each p-opcode.  The p-machine is halted (ie, the interpreter loop
 ; here is exited) by setting pcode_run to zero.
@@ -8619,7 +8620,7 @@ move_enemies
 ?b2
 	lda     pcode_pc
 	tay
-	lda     La0f7,y
+	lda     m_origin,y
 	jsr     ?f10
 	inc     pcode_pc
 	lda     pcode_run
@@ -8682,79 +8683,181 @@ move_enemies
 
 ; See L9b3a for what this jump table is.
 ?t1 ;L9ba2
-	.jump   eact_00 ; 00 = halt
-	.jump   eact_02 ; 02 = next byte -> L0298,x
-	.jump   eact_04 ; 04 = if L010c holds zero, skip next two bytes
-	.jump   eact_06 ; 06 = unconditional branch
-	.jump   eact_08 ; 08 = if (--L0298,x) branch else skip
-	.jump   eact_0a ; 0a = nop
-	.jump   eact_0c ; 0c = move per its type's speed setting
+q_halt =*-?t1
+	.jump   p_halt ; 00 = halt
+q_ldi =*-?t1
+	.jump   p_ldi ; 02 = next byte -> p_var,x
+q_sk_f0 =*-?t1
+	.jump   p_sk_f0 ; 04 = if L010c holds zero, skip next two bytes
+q_br =*-?t1
+	.jump   p_br	; 06 = unconditional branch
+q_dec_bnz=*-?t1
+	.jump   p_dec_bnz ; 08 = if (--p_var,x) branch else skip
+q_nop=*-?t1
+	.jump   p_nop ; 0a = nop
+q_move=*-?t1
+	.jump   p_move ; 0c = move per its type's speed setting
                         ;      also handles reaching end-of-tube
-	.jump   eact_0e ; 0e = grow spike, reverse, convert
-	.jump   eact_10 ; 10 = $00<next byte> contents -> L0298,x
-	.jump   eact_12 ; 12 = start flip
-	.jump   eact_14 ; 14 = continue/end flip
-	.jump   eact_16 ; 16 = reverse direction (segmentwise)
-	.jump   eact_18 ; 18 = check and maybe grab player
-	.jump   eact_1a ; 1a = if L010c == 0, branch
-	.jump   eact_1c ; 1c = enemy-above-spike? -> L010c
-	.jump   eact_1e ; 1e = fuzzball movement?
-	.jump   eact_20 ; 20 = check for enemy-touches-player death?
-	.jump   eact_22 ; 22 = do pulsar motion
-	.jump   eact_24 ; 24 = set enemy direction towards player
-	.jump   eact_26 ; 26 = check for pulsing
+q_grow=*-?t1
+	.jump   p_grow ; 0e = grow spike, reverse, convert
+q_ldm=*-?t1
+	.jump   p_ldm ; 10 = $00<next byte> contents -> p_var,x
+q_flip_start=*-?t1
+	.jump   p_flip_start ; 12 = start flip
+q_flip_cont=*-?t1
+	.jump   p_flip_cont ; 14 = continue/end flip
+q_rev=*-?t1
+	.jump   p_rev ; 16 = reverse direction (segmentwise)
+q_chk=*-?t1
+	.jump   p_chk ; 18 = check and maybe grab player
+q_br_f0=*-?t1
+	.jump   p_br_f0 ; 1a = if L010c == 0, branch
+q_spike=*-?t1
+	.jump   p_spike ; 1c = enemy-above-spike? -> L010c
+q_fuzz=*-?t1
+	.jump   p_fuzz ; 1e = fuzzball movement?
+q_touch=*-?t1
+	.jump   p_touch ; 20 = check for enemy-touches-player death?
+q_pulsar=*-?t1
+	.jump   p_pulsar ; 22 = do pulsar motion
+q_setdir=*-?t1
+	.jump   p_setdir ; 24 = set enemy direction towards player
+q_chk_pulse=*-?t1
+	.jump   p_chk_pulse ; 26 = check for pulsing
+
+
+	.macro	m_halt
+	.byte	q_halt
+	.endm
+
+	.macro	m_ldi	; immed
+	.byte	q_ldi, %1
+	.endm
+
+	.macro	m_sk_f0
+	.byte	q_sk_f0
+	.endm
+
+	.macro	m_br	; label
+	.byte	q_br, <(%1-m_origin-1)
+	.endm
+
+	.macro	m_dec_bnz	; label
+	.byte	q_dec_bnz, %1-m_origin-1
+	.endm
+
+	.macro	m_nop
+	.byte	q_nop
+	.endm
+
+	.macro	m_move
+	.byte	q_move
+	.endm
+
+	.macro	m_grow
+	.byte	q_grow
+	.endm
+
+	.macro	m_ldm	; addr
+	.byte	q_ldm, %1
+	.endm
+
+	.macro	m_flip_start
+	.byte	q_flip_start
+	.endm
+
+	.macro	m_flip_cont
+	.byte	q_flip_cont
+	.endm
+
+	.macro	m_rev
+	.byte	q_rev
+	.endm
+
+	.macro	m_chk
+	.byte	q_chk
+	.endm
+
+	.macro	m_br_f0	; label
+	.byte	q_br_f0, %1-m_origin-1
+	.endm
+
+	.macro	m_spike
+	.byte	q_spike
+	.endm
+
+	.macro	m_fuzz
+	.byte	q_fuzz
+	.endm
+
+	.macro	m_touch
+	.byte	q_touch
+	.endm
+
+	.macro	m_pulsar
+	.byte	q_pulsar
+	.endm
+
+	.macro	m_setdir
+	.byte	q_setdir
+	.endm
+
+	.macro	m_chk_pulse
+	.byte	q_chk_pulse
+	.endm
+
 
 	.local
-eact_00
+p_halt
 	lda     #$00
 	sta     pcode_run
-eact_0a
+p_nop
 	rts
-eact_02
+p_ldi
 	inc     pcode_pc
 	ldy     pcode_pc
-	lda     La0f7,y
-	sta     L0298,x
+	lda     m_origin,y
+	sta     p_var,x
 	rts
-eact_10
+p_ldm
 	inc     pcode_pc
 	ldy     pcode_pc
-	lda     La0f7,y
+	lda     m_origin,y
 	tay
 	lda     page0,y
-	sta     L0298,x
+	sta     p_var,x
 	rts
-eact_04
+p_sk_f0
 	lda     L010c
 	bne     ?f1
 	inc     pcode_pc
 	inc     pcode_pc
 ?f1
 	rts
-eact_1a
+p_br_f0
 	inc     pcode_pc
 	lda     L010c
 	bne     ?f2
 	ldy     pcode_pc
-	lda     La0f7,y
+	lda     m_origin,y
 	sta     pcode_pc
 ?f2
 	rts
-eact_08
-	dec     L0298,x
-	bne     eact_06
+p_dec_bnz
+	dec     p_var,x
+	bne     p_br
 	inc     pcode_pc
 	clv
 	bvc     ?f3
-eact_06
+p_br
 	ldy     pcode_pc
-	lda     La0f7+1,y
+	lda     m_origin+1,y
 	sta     pcode_pc
 ?f3
 	rts
 ; Set L010c to 1 if the enemy is above the end of its segment's spike,
 ; 0 if not.
-eact_1c
+p_spike
 	ldy     enemy_seg,x
 	lda     spike_ht,y
 	bne     ?f4
@@ -8772,7 +8875,7 @@ eact_1c
 	rts
 ; Set L010c to $80 if we're pulsing now, or we will be four ticks in the
 ; future, or to $00 if not.
-eact_26
+p_chk_pulse
 	lda     pulse_beat
 	asl     a
 	asl     a
@@ -8783,13 +8886,13 @@ eact_26
 	eor     #$80
 	sta     L010c
 	rts
-eact_16
+p_rev
 	; Get enemy movement style and set it to ??????
 	lda     enemy_movement_style,x
 	eor     #$40
 	sta     enemy_movement_style,x
 	rts
-eact_0c
+p_move
 	; Get enemy movement style and set it to upwards movement only.
 	lda     enemy_movement_style,x
 	and     #$07
@@ -8845,7 +8948,7 @@ L9c99
 	sta     enemy_along,x
 ?f10
 	rts
-eact_22
+p_pulsar
 	ldy     #$01 ; pulsar
 	lda     L028a,x
 	bmi     ?f12
@@ -8920,7 +9023,7 @@ z0c_at_top
 	lda     enemies_top
 	cmp     #$01
 	beq     ?f18
-	jsr     eact_24
+	jsr     p_setdir
 	clv
 	bvc     ?f22
 ?f18
@@ -8952,7 +9055,7 @@ z0c_at_top
 	inc     enemies_top
 	rts
 
-eact_24
+p_setdir
 	lda     enemy_seg,x
 	tay
 	lda     player_seg
@@ -8974,7 +9077,7 @@ eact_24
 
 ; This code is used to continue and maybe end a flipper's flip, or other
 ; enemy movement from one segment to the next.
-eact_14
+p_flip_cont
 	ldy     L02cc,x
 	; get enemy type and movement
 	lda     enemy_movement_style,x
@@ -9068,7 +9171,7 @@ eact_14
 	sta     L010c
 	rts
 
-eact_18	lda     enemy_movement_style,x
+p_chk	lda     enemy_movement_style,x
 	bmi     ?f33
 	lda     enemy_seg,x
 	cmp     player_seg
@@ -9081,7 +9184,7 @@ eact_18	lda     enemy_movement_style,x
 	rts
 
 
-eact_20
+p_touch
 	lda     enemy_along,x
 	cmp     player_along
 	bne     ?f34
@@ -9093,7 +9196,7 @@ eact_20
 	rts
 
 
-eact_12
+p_flip_start
 	jsr     rev_if_edge
 L9e5f
 ?b35
@@ -9190,7 +9293,7 @@ get_angle
 
 
 	.local
-eact_1e
+p_fuzz
 	ldy     #$04
 	lda     L028a,x
 	bmi     ?f16
@@ -9285,8 +9388,8 @@ eact_1e
 
 	.local
 L9f81
-	jsr     eact_24
-	jsr     eact_16
+	jsr     p_setdir
+	jsr     p_rev
 	jmp     ?f4
 
 
@@ -9327,7 +9430,7 @@ L9f8a
 
 
 	.local
-eact_0e
+p_grow
 	lda     #$01
 	sta     L010c
 	ldy     enemy_seg,x
@@ -9493,175 +9596,187 @@ La06f
 
 ; See the comments on L9b3a for what this is.
 ; Spiker entry point.  Grow, reverse at $20, convert to tanker...
-La0f7
-	.byte   $0c ; 00: move per speed
-	.byte   $0e ; 01: spike, reverse, convert to tanker
-	.byte   $1a ; 02: branch conditional (if converted to tanker)
-	.byte   $06 ; 03:   to 07
-	.byte   $00 ; 04: done
-	.byte   $06 ; 05: branch
-	.byte   $ff ; 06:   to 00
+
+
+m_origin
+
+m_l_spiker
+	m_move			; 00: move per speed
+	m_grow			; 01: spike, reverse, convert to tanker
+	m_br_f0	m_l_move_up	; 02: branch to $07 if converted to tanker
+	m_halt			; 04: done
+	m_br	m_l_spiker		; 05: branch to 0
+
 ; Entry point for "just move up".  Used for tankers, for flippers on some
 ; levels, in some cases for the pieces when a tanker splits...
-	.byte   $0c ; 07: move per speed
-	.byte   $00 ; 08: done
-	.byte   $06 ; 09: branch
-	.byte   $06 ; 0a:   to 07
+
+m_l_move_up
+	m_move			; 07: move per speed
+	m_halt			; 08: done
+	m_br	m_l_move_up		; 09: branch to 7
+
 ; Flipper entry point: move 8 times, flip, repeat.  Don't move during flip.
-	.byte   $02 ; 0b: store in L0298,x...
-	.byte   $08 ; 0c:   ...08
-	.byte   $0c ; 0d: move per speed
-	.byte   $00 ; 0e: done
-	.byte   $08 ; 0f: if --L0298,x then branch
-	.byte   $0c ; 10:   to 0d
-	.byte   $12 ; 11: start flip
-	.byte   $00 ; 12: done
-	.byte   $14 ; 13: continue/end flip
-	.byte   $04 ; 14: if L010c == 0, skip to 17
-	.byte   $06 ; 15: branch
-	.byte   $11 ; 16:   to 12
-	.byte   $06 ; 17: branch
-	.byte   $0a ; 18:   to 0b
+
+m_l0b
+	m_ldi	8		; 0b: store in p_var,x  0c: 8
+m_l0d
+	m_move			; 0d: move per speed
+	m_halt			; 0e: done
+	m_dec_bnz	m_l0d	; 0f: if --p_var,x then branch to $0d
+	m_flip_start		; 11: start flip
+m_l12
+	m_halt			; 12: done
+	m_flip_cont		; 13: continue/end flip
+	m_sk_f0			; 14: if L010c == 0, skip to 17
+	m_br	m_l12		; 15: branch to $12
+	m_br	m_l0b		; 17: branch to $0b
+
 ; Flipper entry point: flip constantly, moving for one tick between flips.
-	.byte   $0c ; 19: move per speed
-	.byte   $00 ; 1a: done
-	.byte   $12 ; 1b: start flip
-	.byte   $00 ; 1c: done
-	.byte   $14 ; 1d: continue/end flip
-	.byte   $0c ; 1e: move per speed
-	.byte   $04 ; 1f: if L010c == 0, skip to 22
-	.byte   $06 ; 20: branch
-	.byte   $1b ; 21:   to 1c
-	.byte   $06 ; 22: branch
-	.byte   $18 ; 23:   to 19
+
+m_l19
+	m_move			; 19: move per speed
+	m_halt			; 1a: done
+	m_flip_start		; 1b: start flip
+m_l1c
+	m_halt			; 1c: done
+	m_flip_cont		; 1d: continue/end flip
+	m_move			; 1e: move per speed
+	m_sk_f0			; 1f: if L010c == 0, skip to 22
+	m_br	m_l1c		; 20: branch to $1c
+	m_br	m_l19		; 22: branch to $19
+
 ; Flipper entry point: flips twice one way, three times the other, twice,
 ; three times, twice, three times, etc.  Move on every tick except the
 ; ones on which we start a flip.
-	.byte   $0c ; 24: move per speed
-	.byte   $00 ; 25: done
-	.byte   $02 ; 26: store in L0298,x...
-	.byte   $02 ; 27:   ...02
-	.byte   $12 ; 28: start flip
-	.byte   $00 ; 29: done
-	.byte   $14 ; 2a: continue/end flip
-	.byte   $0c ; 2b: move per speed
-	.byte   $04 ; 2c: if L010c == 0, skip to 2f
-	.byte   $06 ; 2d: branch
-	.byte   $28 ; 2e:   to 29
-	.byte   $00 ; 2f: done
-	.byte   $08 ; 30: if --L0298,x then branch
-	.byte   $27 ; 31:   to 28
-	.byte   $16 ; 32: reverse direction
-	.byte   $02 ; 33: store in L0298,x...
-	.byte   $03 ; 34:   ...03
-	.byte   $12 ; 35: start flip
-	.byte   $00 ; 36: done
-	.byte   $14 ; 37: continue/end flip
-	.byte   $0c ; 38: move per speed
-	.byte   $04 ; 39: if L010c == 0, skip to 3c
-	.byte   $06 ; 3a: branch
-	.byte   $35 ; 3b:   to 36
-	.byte   $00 ; 3c: done
-	.byte   $08 ; 3d: if --L0298,x then branch
-	.byte   $34 ; 3e:   to 35
-	.byte   $16 ; 3f: reverse direction
-	.byte   $06 ; 40: branch
-	.byte   $23 ; 41:   to 24
+
+m_l24
+	m_move			; 24: move per speed
+	m_halt			; 25: done
+	m_ldi	2		; 26: store in p_var,x 27: 02
+m_l28
+	m_flip_start		; 28: start flip
+m_l29
+	m_halt			; 29: done
+	m_flip_cont		; 2a: continue/end flip
+	m_move			; 2b: move per speed
+	m_sk_f0			; 2c: if L010c == 0, skip to 2f
+	m_br	m_l29		; 2d: branch to $29
+	m_halt			; 2f: done
+	m_dec_bnz	m_l28	; 30: if --p_var,x then branch to $28
+	m_rev			; 32: reverse direction
+	m_ldi	3		; 33: store in p_var,x 34: 03
+m_l35
+	m_flip_start		; 35: start flip
+m_l36
+	m_halt			; 36: done
+	m_flip_cont		; 37: continue/end flip
+	m_move			; 38: move per speed
+	m_sk_f0			; 39: if L010c == 0, skip to 3c
+	m_br	m_l36		; 3a: branch to $36
+	m_halt			; 3c: done
+	m_dec_bnz	m_l35	; 3d: if --p_var,x then branch to $35
+	m_rev			; 3f: reverse direction
+	m_br	m_l24		; 40: branch to $24
+
 ; Action 0c jumps here upon reaching top-of-tube.
-	.byte   $02 ; 42: store in L0298,x...
-	.byte   $04 ; 43:   ...04
-	.byte   $18 ; 44: check and maybe grab player
-	.byte   $00 ; 45: done
-	.byte   $08 ; 46: if --L0298,x then branch
-	.byte   $43 ; 47:   to 44
-	.byte   $12 ; 48: start flip
-	.byte   $00 ; 49: done
+
+m_l42
+	m_ldi	4		; 42: store in p_var,x 43: 04
+m_l44
+	m_chk			; 44: check and maybe grab player
+	m_halt			; 45: done
+	m_dec_bnz	m_l44	; 46: if --p_var,x then branch to $44
+	m_flip_start		; 48: start flip
+m_l49
+	m_halt			; 49: done
 ;La141
-	.byte   $10 ; 4a: flip_top_accel -> L0298,x
-	.byte   $b3 ; 4b:   (value for previous)
-	.byte   $14 ; 4c: continue/end flip
-	.byte   $1a ; 4d: if L010c == 0, branch
-	.byte   $41 ; 4e:   to 42
-	.byte   $08 ; 4f: if --L0298,x then branch
-	.byte   $4b ; 50:   to 4c
-	.byte   $06 ; 51: branch
-	.byte   $48 ; 52:   to 49
+	m_ldm	flip_top_accel	; 4a: flip_top_accel -> p_var,x $b3
+m_l4c
+	m_flip_cont		; 4c: continue/end flip
+	m_br_f0	m_l42		; 4d: if L010c == 0, branch to $42
+	m_dec_bnz	m_l4c	; 4f: if --p_var,x then branch to $4c
+	m_br	m_l49		; 51: branch to $49
+
 ; Flipper entry point: for levels where flippers ride spikes.
 ; Move every tick.
-	.byte   $00 ; 53: done
-	.byte   $0c ; 54: move per speed
-	.byte   $1c ; 55: set L010c to enemy-above-spike-p
-	.byte   $1a ; 56: if L010c == 0, branch
-	.byte   $52 ; 57:   to 53
-	.byte   $12 ; 58: start flip
-	.byte   $00 ; 59: done
-	.byte   $0c ; 5a: move per speed
-	.byte   $14 ; 5b: continue/end flip
-	.byte   $1a ; 5c: if L010c == 0, branch
-	.byte   $52 ; 5d:   to 53
-	.byte   $00 ; 5e: done
-	.byte   $06 ; 5f: branch
-	.byte   $5a ; 60:   to 5b
+
+m_l53
+	m_halt			; 53: done
+	m_move			; 54: move per speed
+	m_spike			; 55: set L010c to enemy-above-spike-p
+	m_br_f0	m_l53		; 56: if L010c == 0, branch to $53
+	m_flip_start		; 58: start flip
+	m_halt			; 59: done
+	m_move			; 5a: move per speed
+m_l5b
+	m_flip_cont		; 5b: continue/end flip
+	m_br_f0	m_l53		; 5c: if L010c == 0, branch to $53
+	m_halt			; 5e: done
+	m_br	m_l5b		; 5f: branch to $5b
+
 ; Fuzzball entry point.
-	.byte   $1e ; 61: fuzzball movement?
-	.byte   $20 ; 62: check for enemy-touches-player death
-	.byte   $00 ; 63: done
-	.byte   $06 ; 64: branch
-	.byte   $60 ; 65:   to 61
-	.byte   $00 ; 66: done
-; eact_1e sets pc to here under some circumstances; see L9fbc.
-	.byte   $02 ; 67: store in L0298,x...
-	.byte   $03 ; 68:   ...03
-	.byte   $20 ; 69: check for enemy-touches-player death
-	.byte   $00 ; 6a: done
-	.byte   $08 ; 6b: if --L0298,x then branch
-	.byte   $68 ; 6c:   to 69
-	.byte   $14 ; 6d: continue/end flip
-	.byte   $1a ; 6e: if L010c == 0, branch
-	.byte   $60 ; 6f:   to 61
-	.byte   $06 ; 70: branch
-	.byte   $65 ; 71:   to 66
+
+m_l_fuzzball
+	m_fuzz			; 61: fuzzball movement?
+	m_touch			; 62: check for enemy-touches-player death
+	m_halt			; 63: done
+	m_br	m_l_fuzzball		; 64: branch to $61
+m_l66
+	m_halt			; 66: done
+
+; p_fuzz sets pc to here under some circumstances; see L9fbc.
+
+	m_ldi	3		; 67: store in p_var,x 68:   ...03
+m_l69
+	m_touch			; 69: check for enemy-touches-player death
+	m_halt			; 6a: done
+	m_dec_bnz	m_l69	; 6b: if --p_var,x then branch to $69
+	m_flip_cont		; 6d: continue/end flip
+	m_br_f0	m_l_fuzzball		; 6e: if L010c == 0, branch to $61
+	m_br	m_l66		; 70: branch to $66
+
 ; Pulsar entry point.
-	.byte   $10 ; 72: pulsar_speed -> L0298,x
-	.byte   $b2 ; 73:   (value for previous)
-	.byte   $22 ; 74: do pulsar motion
-	.byte   $00 ; 75: done
-	.byte   $08 ; 76: if --L0298,x then branch
-	.byte   $73 ; 77:   to 74
-	.byte   $26 ; 78: check if pulsing
-	.byte   $1a ; 79: if not pulsing, branch
-	.byte   $7e ; 7a:   to 7f
-	.byte   $22 ; 7b: do pulsar motion
-	.byte   $00 ; 7c: done
-	.byte   $06 ; 7d: branch
-	.byte   $77 ; 7e:   to 78
-	.byte   $24 ; 7f: enemy attract to player
-	.byte   $12 ; 80: start flip
-	.byte   $00 ; 81: done
-	.byte   $14 ; 82: continue/end flip
-	.byte   $1a ; 83: if L010c == 0, branch
-	.byte   $71 ; 84:   to 72
-	.byte   $06 ; 85: branch
-	.byte   $80 ; 86:   to 81
+
+m_l_pulsar
+	m_ldm	pulsar_fliprate	; 72: pulsar_fliprate -> p_var,x
+m_l74
+	m_pulsar		; 74: do pulsar motion
+	m_halt			; 75: done
+	m_dec_bnz	m_l74	; 76: if --p_var,x then branch to $74
+m_l78
+	m_chk_pulse		; 78: check if pulsing
+	m_br_f0	m_l7f		; 79: if not pulsing, branch to $7f
+	m_pulsar		; 7b: do pulsar motion
+	m_halt			; 7c: done
+	m_br	m_l78		; 7d: branch to $78
+m_l7f
+	m_setdir		; 7f: enemy attract to player
+	m_flip_start		; 80: start flip
+m_l81
+	m_halt			; 81: done
+	m_flip_cont		; 82: continue/end flip
+	m_br_f0	m_l_pulsar		; 83: if L010c == 0, branch to $72
+	m_br	m_l81		; 85: branch to $81
+
 ; Flipper entry point: flip away from player, move four ticks, repeat.
 ; Move on every tick except those on which we start flips.
-	.byte   $24 ; 87: enemy attract to player
-	.byte   $16 ; 88: reverse enemy direction
-	.byte   $12 ; 89: start flip
-	.byte   $00 ; 8a: done
-	.byte   $0c ; 8b: move per speed
-	.byte   $14 ; 8c: continue/end flip
-	.byte   $04 ; 8d: if L010c == 0, skip to 90
-	.byte   $06 ; 8e: branch
-	.byte   $89 ; 8f:   to 8a
-	.byte   $02 ; 90: store in L0298,x...
-	.byte   $04 ; 91:   ...04
-	.byte   $00 ; 92: done
-	.byte   $0c ; 93: move per speed
-	.byte   $08 ; 94: if --L0298,x then branch
-	.byte   $91 ; 95:   to 92
-	.byte   $06 ; 96: branch
-	.byte   $86 ; 97:   to 87
+
+m_l87
+	m_setdir		; 87: enemy attract to player
+	m_rev			; 88: reverse enemy direction
+	m_flip_start		; 89: start flip
+m_l8a
+	m_halt			; 8a: done
+	m_move			; 8b: move per speed
+	m_flip_cont		; 8c: continue/end flip
+	m_sk_f0			; 8d: if L010c == 0, skip to 90
+	m_br	m_l8a		; 8e: branch to $8a
+	m_ldi	4		; 90: store in p_var,x 91: 04
+m_l92
+	m_halt			; 92: done
+	m_move			; 93: move per speed
+	m_dec_bnz	m_l92	; 94: if --p_var,x then branch to $92
+	m_br	m_l87		; 96: branch to $87
 
 
 
@@ -9679,7 +9794,7 @@ move_shots
 ; Friendly shot.  Move it down the tube.  L02f2, if set, appears to slow
 ; the shot down, presumably so it doesn't go off the back wall before it
 ; gets a chance to hit a spiker.
-	adc     #$09
+	adc     #9
 ;La1a0
 	ldy     L02f2,x
 	beq     ?f1
@@ -9891,11 +10006,11 @@ enm_shoot
 	rts
 ; Chance of a new shot, indexed by number of existing shots.  See La2cc.
 ?t1
-	.byte   $00
-	.byte   $e0
-	.byte   $f0
-	.byte   $fa
-	.byte   $ff
+	.byte	$00
+	.byte	$e0
+	.byte	$f0
+	.byte	$fa
+	.byte	$ff
 
 
 	.local
@@ -10017,11 +10132,11 @@ La398
 	ldx     ?t1,y
 	jmp     inc_score
 ?t1
-	.byte   01
-	.byte   02
-	.byte   03
-	.byte   04
-	.byte   01
+	.byte	01
+	.byte	02
+	.byte	03
+	.byte	04
+	.byte	01
 
 
 	.local
@@ -10657,7 +10772,7 @@ La789
 	lda     #$20
 	sta     L010e
 	sta     L010d
-	lda     #_game_mode_04	; set mode to end-game high score victory explosion
+	lda     #_game_mode_high_score_explosion	; set mode to end-game high score victory explosion
 	sta     game_mode
 	lda     #$00
 	sta     y_out_offset_l
@@ -10851,11 +10966,11 @@ check_zap
 	rts
 
 ?zap_length
-	.byte   $00 ; Indexed by zapper use count
-	.byte   $13
-	.byte   $05
-	.byte   $00
-	.byte   $00
+	.byte	$00 ; Indexed by zapper use count
+	.byte	$13
+	.byte	$05
+	.byte	$00
+	.byte	$00
 
 
 
@@ -10894,11 +11009,11 @@ La888
 ; XXX	What does this byte do?
 
 .if (VER=1)|(VER=2)
-	.byte   $b2	; a8af
+	.byte	$b2	; a8af
 .endif	; (VER=1)|(VER=2)
 
 .if (VER=3)
-	.byte   $e1	; a8af
+	.byte	$e1	; a8af
 .endif	; (VER=3)
 
 
@@ -10906,10 +11021,10 @@ La888
 
 
 coinage_msgs
-	.byte   _msg_free_play ; FREE PLAY
-	.byte   _msg_1_coin_2_plays ; 1 COIN 2 PLAYS
-	.byte   _msg_1_coin_1_play ; 1 COIN 1 PLAY
-	.byte   _msg_2_coins_1_play ; 2 COINS 1 PLAY
+	.byte	_msg_free_play ; FREE PLAY
+	.byte	_msg_1_coin_2_plays ; 1 COIN 2 PLAYS
+	.byte	_msg_1_coin_1_play ; 1 COIN 1 PLAY
+	.byte	_msg_2_coins_1_play ; 2 COINS 1 PLAY
 
 
 	.local
@@ -12351,17 +12466,17 @@ game_mode_copyright
 ; These appear to be X offsets of the tube pictures on the starting-level
 ; selection display.  See Laff9.
 ?t1
-	.byte   $be, $e3, $09, $30, $58
+	.byte	$be, $e3, $09, $30, $58
 
 ?selfrate_msgs
-	.byte   _msg_rate_yourself ; "RATE YOURSELF"
-	.byte   _msg_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
-	.byte   _msg_press_fire_to_select ; "PRESS FIRE TO SELECT"
-	.byte   _msg_novice ; "NOVICE"
-	.byte   _msg_expert ; "EXPERT"
-	.byte   _msg_level ; "LEVEL"
-	.byte   _msg_hole ; "HOLE"
-	.byte   _msg_bonus ; "BONUS"
+	.byte	_msg_rate_yourself ; "RATE YOURSELF"
+	.byte	_msg_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
+	.byte	_msg_press_fire_to_select ; "PRESS FIRE TO SELECT"
+	.byte	_msg_novice ; "NOVICE"
+	.byte	_msg_expert ; "EXPERT"
+	.byte	_msg_level ; "LEVEL"
+	.byte	_msg_hole ; "HOLE"
+	.byte	_msg_bonus ; "BONUS"
 
 ; Used at Lb083 to draw the box around the selected level, on the starting
 ; level selection screen.
@@ -12608,13 +12723,13 @@ Lb1b6
 ?f1
 	; Are we in attract or gameplay mode?
 	lda     game_mode
-	cmp     #_game_mode_00
+	cmp     #_game_mode_initialize
 	beq     ?f9
 	lda     #_dblduf_reg_0
 	jsr     db_init_vidptr
 	jsr     Lb332
 	bcs     ?f5
-	jsr     Lb20d
+	jsr     ?jump_to_game_mode
 	lda     L016e
 	beq     ?f5
 ; Anti-piracy provision.  Checksum the video RAM that holds the copyright
@@ -12659,15 +12774,11 @@ Lb1b6
 	clv
 	bvc     ?f10
 ?f9
-	jmp     game_mode_00
+	jmp     game_mode_initialize
 ?f10
 	rts
 
-
-
-
-	.local
-Lb20d
+?jump_to_game_mode
 	ldx     game_mode
 	lda     ?game_mode_jump_table+1,x
 	pha
@@ -12676,17 +12787,41 @@ Lb20d
 	rts
 
 ?game_mode_jump_table
-	.jump   game_mode_00
+
+_game_mode_initialize			=	*-?game_mode_jump_table
+	.jump   game_mode_initialize
+
+_game_mode_service		=	*-?game_mode_jump_table
 	.jump   game_mode_service
-	.jump   game_mode_04
+
+_game_mode_high_score_explosion	=	*-?game_mode_jump_table
+	.jump   game_mode_high_score_explosion
+
+_game_mode_enter_initials	=	*-?game_mode_jump_table
 	.jump   game_mode_enter_initials	; Enter high score initials
+
+_game_mode_copyright		=	*-?game_mode_jump_table
 	.jump   game_mode_copyright	; Copyright
+
+_game_mode_high_scores		=	*-?game_mode_jump_table
 	.jump   game_mode_high_scores	; High scores
+
+_game_mode_msg_game_over	=	*-?game_mode_jump_table
 	.jump   game_mode_msg_game_over	; "GAME OVER"
+
+_game_mode_msg_play		=	*-?game_mode_jump_table
 	.jump   game_mode_msg_play	; "PLAY"
+
+_game_mode_msg_press_start	=	*-?game_mode_jump_table
 	.jump   game_mode_msg_press_start	; "PRESS START"
+
+_game_mode_logo_start		=	*-?game_mode_jump_table
 	.jump   game_mode_logo_start
+
+_game_mode_logo_zoom		=	*-?game_mode_jump_table
 	.jump   game_mode_logo_zoom	; zoom in on logo
+
+_game_mode_msg_2_credit_minimum	=	*-?game_mode_jump_table
 	.jump   game_mode_msg_2_credit_minimum	; "INSERT COINS"
 
 
@@ -12694,8 +12829,9 @@ Lb20d
 
 
 
+
 	.local
-game_mode_00
+game_mode_initialize
 	lda     #_dblduf_reg_7
 	jsr     db_init_vidptr
 	jsr     draw_player
@@ -13403,10 +13539,10 @@ draw_flipper=?draw_flipper
 	rts
 ; Graphic numbers for flippers.  Indexed by $18 bits of enemy_movement_style value.
 ?t1
-	.byte   0
-	.byte   0
-	.byte   0
-	.byte   0
+	.byte	0
+	.byte	0
+	.byte	0
+	.byte	0
 
 
 
@@ -13423,10 +13559,10 @@ draw_tanker=?draw_tanker
 	jmp     graphic_at_mid
 ; Graphic number for tankers.  Indexed by contents value (L028a bits $03).
 ?t2
-	.byte   $1a
-	.byte   $1a
-	.byte   $4a
-	.byte   $4c
+	.byte	$1a
+	.byte	$1a
+	.byte	$4a
+	.byte	$4c
 
 
 
@@ -13443,10 +13579,10 @@ draw_spiker=?draw_spiker
 	adc     #$12
 	jmp     graphic_at_mid
 ; Not used; a table version of the value computed by Lb629-Lb62b.
-	.byte   $12
-	.byte   $14
-	.byte   $16
-	.byte   $18
+	.byte	$12
+	.byte	$14
+	.byte	$16
+	.byte	$18
 
 
 
@@ -13500,27 +13636,27 @@ draw_spiker=?draw_spiker
 ; Used - apparently overlappingly - at Lb667 and Lb68b.
 ; Maybe this is a sine wave, and the overlapping is sin-vs-cos?
 ?Lb634_t1
-	.byte   $00
-	.byte   $10
-	.byte   $1f
-	.byte   $28
+	.byte	$00
+	.byte	$10
+	.byte	$1f
+	.byte	$28
 ?Lb634_t1+4
-	.byte   $2c
-	.byte   $28
-	.byte   $1f
-	.byte   $10
-	.byte   $00
-	.byte   $f0
-	.byte   $e1
-	.byte   $d8
-	.byte   $d4
-	.byte   $d8
-	.byte   $e1
-	.byte   $f0
-	.byte   $00
-	.byte   $10
-	.byte   $1f
-	.byte   $28
+	.byte	$2c
+	.byte	$28
+	.byte	$1f
+	.byte	$10
+	.byte	$00
+	.byte	$f0
+	.byte	$e1
+	.byte	$d8
+	.byte	$d4
+	.byte	$d8
+	.byte	$e1
+	.byte	$f0
+	.byte	$00
+	.byte	$10
+	.byte	$1f
+	.byte	$28
 
 
 
@@ -13643,12 +13779,12 @@ draw_pulsar=?draw_pulsar
 ?dp_f4
 	rts
 ?dp_t1
-	.byte   $0d
-	.byte   $0c
-	.byte   $0b
-	.byte   $0a
-	.byte   $09
-	.byte   $09
+	.byte	$0d
+	.byte	$0c
+	.byte	$0b
+	.byte	$0a
+	.byte	$09
+	.byte	$09
 
 
 
@@ -13744,10 +13880,10 @@ draw_explosions
 ?f5
 	rts
 ?t1
-	.byte   $00
-	.byte   $00
-	.byte   $5a
-	.byte   $58
+	.byte	$00
+	.byte	$00
+	.byte	$5a
+	.byte	$58
 	.byte	$56
 	.byte	$1c
 
@@ -13791,46 +13927,46 @@ vapp_mid_graphic
 	lda     graphic_table,y
 	jmp     vapp_A_X
 ?t1
-	.byte   $02
-	.byte   $02
-	.byte   $02
-	.byte   $02
-	.byte   $02
-	.byte   $04
-	.byte   $03
-	.byte   $02
-	.byte   $01
-	.byte   $20
-	.byte   $03
-	.byte   $03
-	.byte   $03
-	.byte   $03
-	.byte   $03
-	.byte   $03
-	.byte   $03
-	.byte   $3b
-	.byte   $b8
+	.byte	$02
+	.byte	$02
+	.byte	$02
+	.byte	$02
+	.byte	$02
+	.byte	$04
+	.byte	$03
+	.byte	$02
+	.byte	$01
+	.byte	$20
+	.byte	$03
+	.byte	$03
+	.byte	$03
+	.byte	$03
+	.byte	$03
+	.byte	$03
+	.byte	$03
+	.byte	$3b
+	.byte	$b8
 
 
 ; Offsets into table ?t3
 ?t2
-	.byte   0	; init_explosion_colors
-	.byte   2	; rotate_explosion_colors
-	.byte   2
-	.byte   2
-	.byte   2
-	.byte   2
-	.byte   2
-	.byte   2
-	.byte   4	; init_explosion_scale
-	.byte   6	; rescale_explosion
-	.byte   $ff
-	.byte   $ff
-	.byte   $ff
-	.byte   $ff
-	.byte   $ff
-	.byte   $ff
-	.byte   $ff
+	.byte	0	; init_explosion_colors
+	.byte	2	; rotate_explosion_colors
+	.byte	2
+	.byte	2
+	.byte	2
+	.byte	2
+	.byte	2
+	.byte	2
+	.byte	4	; init_explosion_scale
+	.byte	6	; rescale_explosion
+	.byte	$ff
+	.byte	$ff
+	.byte	$ff
+	.byte	$ff
+	.byte	$ff
+	.byte	$ff
+	.byte	$ff
 
 
 
@@ -13941,7 +14077,7 @@ rescale_explosion
 
 	.local
 ; L3ff2 = code to move to extreme corners of the screen, not drawing.
-game_mode_04
+game_mode_high_score_explosion
 	; Append a vjsr L3ff2 to the display list
 	ldax_im	L3ff2
 	jsr     vapp_vjsr_AX
@@ -14172,7 +14308,7 @@ lev_fscale2	; fscale2[16]
 
 
 
-	.byte   $3e	; bcfc
+	.byte	$3e	; bcfc
 
 
 
@@ -14623,37 +14759,37 @@ Lbdcb
 	.byte	$08	; bfb5
 ; Number of points.  Indexed by graphic number.
 ?t1
-	.byte   _pv_len_0
-	.byte   _pv_len_1
-	.byte   _pv_len_2
-	.byte   _pv_len_3
-	.byte   _pv_len_4
-	.byte   _pv_len_5
-	.byte   _pv_len_6
-	.byte   _pv_len_7
-	.byte   _pv_len_8
-	.byte   _pv_len_9
-	.byte   _pv_len_10
-	.byte   _pv_len_11
-	.byte   _pv_len_12
-	.byte   _pv_len_13
+	.byte	_pv_len_0
+	.byte	_pv_len_1
+	.byte	_pv_len_2
+	.byte	_pv_len_3
+	.byte	_pv_len_4
+	.byte	_pv_len_5
+	.byte	_pv_len_6
+	.byte	_pv_len_7
+	.byte	_pv_len_8
+	.byte	_pv_len_9
+	.byte	_pv_len_10
+	.byte	_pv_len_11
+	.byte	_pv_len_12
+	.byte	_pv_len_13
 
 ; Starting offsets into points vector.  Indexed by graphic number.
 ?t2
-	.byte   _pv_offset_0
-	.byte   _pv_offset_1
-	.byte   _pv_offset_2
-	.byte   _pv_offset_3
-	.byte   _pv_offset_4
-	.byte   _pv_offset_5
-	.byte   _pv_offset_6
-	.byte   _pv_offset_7
-	.byte   _pv_offset_8
-	.byte   _pv_offset_9
-	.byte   _pv_offset_10
-	.byte   _pv_offset_11
-	.byte   _pv_offset_12
-	.byte   _pv_offset_13
+	.byte	_pv_offset_0
+	.byte	_pv_offset_1
+	.byte	_pv_offset_2
+	.byte	_pv_offset_3
+	.byte	_pv_offset_4
+	.byte	_pv_offset_5
+	.byte	_pv_offset_6
+	.byte	_pv_offset_7
+	.byte	_pv_offset_8
+	.byte	_pv_offset_9
+	.byte	_pv_offset_10
+	.byte	_pv_offset_11
+	.byte	_pv_offset_12
+	.byte	_pv_offset_13
 
 
 ; Points vector.
@@ -16728,7 +16864,7 @@ game_state_0
 game_state_attract
 
 	; game_mode <- _game_mode_0
-	lda     #_game_mode_00
+	lda     #_game_mode_initialize
 	sta     game_mode
 
 	; game_state <- _game_state_30
@@ -16784,7 +16920,7 @@ game_state_attract
 game_state_30
 	lda     #_game_state_4
 	sta     next_game_state
-	lda     #_game_mode_00
+	lda     #_game_mode_initialize
 	sta     game_mode
 	lda     #_game_state_countdown
 	sta     game_state
@@ -18264,10 +18400,14 @@ graphic_table_hit_by_shot_1_offset = *-graphic_table
 
 check_coin_sw
 	; X goes 2, 1, 0 as we look at bits in cabsw_shadow
-	ldx     #$02
-?b0
+	ldx     #2
+
+?loop
+
+	; Get the coin switch bits; shift the current bit into the carry
+
 	.byte $ad, $08, $00	; XXX lda     cabsw_shadow
-	cpx     #$01
+	cpx     #1
 	beq     ?f1
 	bcs     ?f2
         ; X is 0
@@ -18278,6 +18418,7 @@ check_coin_sw
 ?f2
 	; X is 2
 	lsr     a
+
 
 	; cabsw_shadow has been shifted right 1, 2 or 3 times
         ; One of the coin switch bits is now in the carry
@@ -18397,7 +18538,11 @@ check_coin_sw
 ?f13
 	dex
 	bmi     ?f14
-	jmp     ?b0
+	jmp     ?loop
+
+
+
+
 ?f14
 	lda     coinage_shadow
 	lsr     a ; extract bonus coins bits
@@ -19600,7 +19745,7 @@ vapp_ldraw_YxX_2dig_A
 ; Magic button combinations for when test-mode switch is turned on live.
 ; 08 = zap, 10 = fire, 20 = start 1, 40 = start 2
 ?test_magic_bits
-	.byte   pokey2_btn_fire_mask|pokey2_btn_zap_mask
+	.byte	pokey2_btn_fire_mask|pokey2_btn_zap_mask
 	.byte	pokey2_btn_fire_mask|pokey2_btn_zap_mask ; selftest
 	.byte	pokey2_btn_fire_mask|pokey2_btn_start1p_mask ; zero times
 	.byte	pokey2_btn_fire_mask|pokey2_btn_start2p_mask ; zero scores
@@ -20235,7 +20380,7 @@ selftest_main_loop
 ; this "something" is the hardware watchdog.
 ;
 ; Yes. The self test procedure specifies that to exit the self-test
-; procedure, set the disag. switch to off. That will drop us here;
+; procedure, set the diag. switch to off. That will drop us here;
 ; looping forever. The watchdog will fire, and send us to the reset
 ; vector, restarting the game.
 
@@ -20460,11 +20605,11 @@ selftest_5
 	ldx	#<vg_sub_image_selftest_5
 	lda	#>vg_sub_image_selftest_5
 	bne	?f1
-selftest_4 ; v2
+selftest_4 ; v2,v3
 	ldx	#<vg_sub_image_selftest_4
 	lda	#>vg_sub_image_selftest_4
 	bne	?f1
-selftest_2 ; v2
+selftest_2 ; v2,v3
 	ldax_im	vg_sub_image_selftest_2	; diagonal grid
 ?f1
 	jsr	vapp_vjsr_AX     
@@ -21087,6 +21232,7 @@ vapp_stats
 	rts
 
 
+; XXX
 
 .if VER=1
 	.byte	$ee
@@ -21762,14 +21908,14 @@ vapp_digits
 ; Used at $dbb2
 ; This is the same table in all versions, just in different locations
 Ldc4f
-        .byte   $10
-        .byte   $10
-        .byte   $40
-        .byte   $40
-        .byte   $90
-        .byte   $90
-        .byte   $ff
-        .byte   $ff
+        .byte	$10
+        .byte	$10
+        .byte	$40
+        .byte	$40
+        .byte	$90
+        .byte	$90
+        .byte	$ff
+        .byte	$ff
 ; 20-element sine wave, for drawing the spinner line on selftest screen 1
 spinner_sine
 	.byte	$00, $0c, $16, $1e
