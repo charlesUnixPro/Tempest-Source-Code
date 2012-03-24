@@ -1,5 +1,44 @@
 	.OPT	LIST
 
+;
+; Most of this is derived from:
+;
+;   http://www.ionpool.net/arcade/tempest_code_project/136002.txt
+; and
+;   http://216.46.5.1:18804/ 
+;
+;
+; From ionpool:
+;
+;   ; Tempest Source Code
+;   ; -------------------
+;   ; The actual code is Copyright 1981 by Atari.
+;   ; Documentation is Copyright 1999 by Arcade Gameshop Corporation.
+;   ; All rights reserved. Additional rights granted through OpenContent
+;   ; License. See http://arcade.gameshop.com/opl.html
+;   ;
+;   ; No warranty or fitness for particular purpose expressed or implied.
+;   ;
+;   ; Updated 09/17/2004 by Josh McCormick
+;   ;
+;   ; Contributors:
+;   ; -------------
+;   ; Josh McCormick - Project lead and main documentarian.
+;   ;                  (http://www.galstar.com/~jmccorm)
+;   ; Clay Cowgill   - EAROM programming example, Vector ROM image list,
+;   ;                  MAME programming tips (http://www.multigame.com)
+;   ; Ken Lui        - Documentation of data segments on V1 roms.
+;   ;                  Provided a much better assembler/disassembler package.
+;   ;                  (http://www.ecst.csuchico.edu/~tempest)
+;
+; From rodents.montreal.qc.ca
+;
+;   ; There is doubtless much that is wrong or missing here.  If you can help
+;   ; supply any missing bits, or correct anything wrong, please feel free to
+;   ; write me: mouse@rodents.montreal.qc.ca.
+;
+
+
 ; 11Dec11 cac
 ;   In selftest, an "M" appears
 ;   From "Tempest  Detailed theory of operation.html",
@@ -751,28 +790,6 @@ page0 = *
 ;
 
 game_state	.ds	1
-
-; game_state values for normal mode
-
-_game_state_0		=	 0
-_game_state_attract_mode	=	 2
-_game_state_4		=	 4
-_game_state_6		=	 6
-_game_state_test_screen	=	 8
-_game_state_countdown		=	10
-; _game_state_12: there is no state 12, the jump table has a 0000
-_game_state_get_level	=	14
-_game_state_16		=	16
-_game_state_got_high_score	=	18
-_game_state_enter_initials	=	20
-_game_state_pregame	=	22
-_game_state_zoom_to_next_level		=	24
-_game_state_26		=	26
-_game_state_28		=	28
-_game_state_30		=	30
-_game_state_zoom	=	32
-_game_state_test_menu	=	34
-_game_state_victory	=	36
 
 ; game_state values for self test mode
 
@@ -6646,7 +6663,15 @@ L3ff2
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-* = $9000
+;;; This is a emperical test to locate code that is improperly disassmebled; 
+;;; specifically a failure to identify location dependent code. To wit: 
+;;; assemble it in a different location and see if it crashes.
+
+.if PIRATE=1
+* = $8000		; debugging location
+.else
+* = $9000		; canonical location
+.endif
 
 ; Don't (yet) know what this data is.
 ; CRC data?
@@ -10437,10 +10462,7 @@ La504
 	cmp     p1_score_h
 	bcs     ?f11
 	ldx     p1_score_l
-.if PIRATE
-	nop
-	nop
-.else
+.if PIRATE=0
 	inc     page0,x
 .endif
 ; End apparent anti-piracy code
@@ -13388,10 +13410,7 @@ draw_pending
 	cmp     #$0a
 	bcc     ?f9
 	lda     #$7a
-.if PIRATE
-	nop
-	nop
-.else
+.if PIRATE=0
 	sta     main_loop_timer
 .endif
 ; End anti-piracy code.
@@ -16135,11 +16154,7 @@ Lc54d
 	cpx     #$15
 	bcc     ?f6
 	ldx     p1_score_l
-.if PIRATE
-	nop
-	nop
-	nop
-.else
+.if PIRATE=0
 	inc     player_seg,x
 .endif
 ?f6
@@ -16506,6 +16521,7 @@ main_loop
 	jsr     init_pokey
 	lda     #_game_state_0
 	sta     game_state
+
 ; This appears to be the game's main loop
 ; (This does not apply to reset-in-service-mode selftest, which has its
 ; own, different, main loop.)
@@ -16513,6 +16529,7 @@ main_loop
 	; main_loop_timer is incremented by the NMI timer; if something is
 	; horribly broken, we will hang here. Otherwise, we will stall
 	; for about    (IRQ at 246Hz, divide by 10, about 1/25th of a second?
+
 	; Is the 0-9 timer at 9 or greater
 	lda     main_loop_timer
 	cmp     #9
@@ -16566,25 +16583,69 @@ main_loop
 ?f3
 	rts
 
+
+
+
+
+
 ?game_state_jump_table
+
+_game_state_0 		=	*-?game_state_jump_table
 	.jump   game_state_0
+
+_game_state_attract_mode	=	 *-?game_state_jump_table
 	.jump   game_state_attract
+
+_game_state_4		=	 *-?game_state_jump_table
 	.jump   game_state_4
+
+_game_state_6		=	 *-?game_state_jump_table
 	.jump   game_state_6
+
+_game_state_test_screen	=	 *-?game_state_jump_table
 	.jump   game_state_test_screen
+
+_game_state_countdown	=	*-?game_state_jump_table
 	.jump   game_state_countdown
-	.word   0
+
+; there is no state 12, the jump table has a 0000
+_game_state_12		=	*-?game_state_jump_table
+	.jump   1
+
+_game_state_get_level	=	*-?game_state_jump_table
 	.jump   game_state_get_level
+
+_game_state_16		=	*-?game_state_jump_table
 	.jump   game_state_16
+
+_game_state_got_high_score	=	*-?game_state_jump_table
 	.jump   game_state_got_high_score
+
+_game_state_enter_initials	=	*-?game_state_jump_table
 	.jump   game_state_enter_initials
+
+_game_state_pregame	=	*-?game_state_jump_table
 	.jump   game_state_pregame
+
+_game_state_zoom_to_next_level		=	*-?game_state_jump_table
 	.jump   game_state_zoom_to_next_level
+
+_game_state_26		=	*-?game_state_jump_table
 	.jump   game_state_26
+
+_game_state_28		=	*-?game_state_jump_table
 	.jump   game_state_28 ; I don't see this code offset used
+
+_game_state_30		=	*-?game_state_jump_table
 	.jump   game_state_30
+
+_game_state_zoom	=	*-?game_state_jump_table
 	.jump   game_state_zoom
+
+_game_state_test_menu	=	*-?game_state_jump_table
 	.jump   game_state_test_menu
+
+_game_state_victory	=	*-?game_state_jump_table
 	.jump   game_state_victory
 
 
@@ -16602,7 +16663,9 @@ main_loop
 
 	.local
 
-;This is the state for countdown and switch to the state in next_game_state on timeout
+; This is the state for countdown and switch to the state in next_game_state on 
+; timeout
+
 game_state_countdown
 	lda     timectr
 	and     enable_countdown
@@ -16797,9 +16860,7 @@ Lc891
 	lda     #$13
 	cmp     curlevel
 	bcs     ?f10
-.if PIRATE
-	nop
-.else
+.if PIRATE=0
 	sed
 .endif
 ; End apparent anti-piracy test
@@ -17927,7 +17988,7 @@ sound_pulsar
 ;   NMI handler to play sounds
 ;
 
-update_sounds
+update_sounds	; interrupt code
 
 	; Loop over the 8 pokey audc and audf ports
 	;  X    port
@@ -18398,7 +18459,7 @@ graphic_table_hit_by_shot_1_offset = *-graphic_table
 ; I believe that this is debouncing the coin switches, with a long debounce
 ;
 
-check_coin_sw
+check_coin_sw	; interrupt code
 	; X goes 2, 1, 0 as we look at bits in cabsw_shadow
 	ldx     #2
 
@@ -19364,11 +19425,14 @@ read_optsws
 	.byte	3, 4, 5, 2
 	.byte	$7c
 
-; maskable and NMI interrupt handler
-; The tempest H/W generates a IRQ at 246 Hz, every 4 ms
+
+
 	.local
 
-nmi_irq_brk
+; maskable and NMI interrupt handler
+; The tempest H/W generates a IRQ at 246 Hz, every 4 ms
+
+nmi_irq_brk			; interrupt code
 	pha	; Save A
 	txa
 	pha	; Save X
@@ -19586,7 +19650,7 @@ nmi_irq_brk
 ?vg_is_running
 
 
-; restore registers and return from interrut
+; restore registers and return from interrupt
 
 	pla
 	tay
@@ -21926,6 +21990,9 @@ spinner_cosine
 	.byte 	0
 .endif	; (VER=2)|(VER=3)
 
+.if PIRATE=1
+*=$dffa
+.endif
 
 vec_nmi	.word	nmi_irq_brk
 vec_res	.word	reset
