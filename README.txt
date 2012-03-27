@@ -62,8 +62,9 @@ Needed tools:
                 roms/ver3/136002.136
                 roms/ver3/136002.237
 
-	atasm: A 6502 assembler. I use the Fedora atasm-1.07d-2.fc15.i686
-	distribution. See http://atari.miribilist.com/atasm/
+	ca65: A 6502 assembler. I use the cc65-2.13.3-1.i386.rpm from
+	ftp://ftp.musoftware.de/pub/uz/cc65/RedHat/cc65-2.13.3-1.i386.rpm
+	distribution. See http://http://www.cc65.org/
 
 	xxdiff: A 'diff' program with excellent visualization. I use
 	the Fedora xxdiff-3.2-14.fc15.i686 distribution. See 
