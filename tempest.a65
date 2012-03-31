@@ -15350,7 +15350,7 @@ Lc235:
 	sbc     y_out_offset_l
 	sta     L0121
 	lda     lev_y2db,y
-	.byte	$ed, $69, $00	; sbc     y_out_offset_h ; XXX assembler is generating a page zero reference
+	sbc     a:y_out_offset_h
 	ldx     #$03
 ?b2:
 	lsr     a
@@ -16756,9 +16756,9 @@ game_state_0:
 ?b2:
 	ldx     curplayer
 	lda     init_lives
-	.byte $9d, $48, $00 ;sta     players_lives,x ; XXX
+	sta     a:players_lives,x
 	lda     #$ff
-	.byte $9d, $46, $00; sta     players_level,x ; XXX
+	sta     a:players_level,x
 	dec     curplayer
 	bpl     ?b2
 	lda     #0
@@ -18308,7 +18308,7 @@ check_coin_sw:	; interrupt code
 
 	; Get the coin switch bits; shift the current bit into the carry
 
-	.byte $ad, $08, $00	; XXX lda     cabsw_shadow
+	lda     a:cabsw_shadow
 	cpx     #1
 	beq     ?f1
 	bcs     ?f2
@@ -18361,7 +18361,7 @@ check_coin_sw:	; interrupt code
 	sta     L0d,x
 
 	; Check the slam switch
-	.byte $ad, $08, $00	; XXX lda     cabsw_shadow
+	lda     a:cabsw_shadow
 	and     #cabsw_slam_sw_mask
 	bne     ?l5
 
