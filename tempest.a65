@@ -10972,10 +10972,10 @@ La888:
 
 
 coinage_msgs:
-	.byte	_msg_free_play ; FREE PLAY
-	.byte	_msg_1_coin_2_plays ; 1 COIN 2 PLAYS
-	.byte	_msg_1_coin_1_play ; 1 COIN 1 PLAY
-	.byte	_msg_2_coins_1_play ; 2 COINS 1 PLAY
+	.byte	_msg_en_free_play ; FREE PLAY
+	.byte	_msg_en_1_coin_2_plays ; 1 COIN 2 PLAYS
+	.byte	_msg_en_1_coin_1_play ; 1 COIN 1 PLAY
+	.byte	_msg_en_2_coins_1_play ; 2 COINS 1 PLAY
 
 
 La8b4:
@@ -10987,16 +10987,16 @@ La8b4:
 	; Branch in play mode
 	lda     play_state
 	bmi     La8b4_f2
-	ldx     #_msg_game_over ; "GAME OVER"
+	ldx     #_msg_en_game_over ; "GAME OVER"
 	lda     timectr
 	and     #$20
 	bne     ?f1
-	ldx     #_msg_insert_coins ; "INSERT COINS"
+	ldx     #_msg_en_insert_coins ; "INSERT COINS"
 	lda     credits
 	beq     ?f1
 	bit     La2
 	bmi     ?f1
-	ldx     #_msg_press_start ; "PRESS START"
+	ldx     #_msg_en_press_start ; "PRESS START"
 ?f1:
 	jsr     vapp_msg
 	; Append a vcentre to the display list
@@ -11072,7 +11072,7 @@ La8b4_f2:
 
 	lda     L0123
 	bpl     ?f9
-	ldx     #_msg_avoid_spikes ; "AVOID SPIKES"
+	ldx     #_msg_en_avoid_spikes ; "AVOID SPIKES"
 	jsr     vapp_msg
 ?f9:
 	lda     game_state
@@ -11086,7 +11086,7 @@ La8b4_f2:
 	lda     p1_startchoice,x
 	beq     ?f10
 	; No
-	ldx     #_msg_bonus2 ; "BONUS "
+	ldx     #_msg_en_bonus2 ; "BONUS "
 	jsr     vapp_msg
 	; Get the start level choice number the player selected. Note: 
 	; Choice numer, not level number
@@ -11094,9 +11094,9 @@ La8b4_f2:
 	ldx     p1_startchoice,y
 	jsr     vapp_startbonus
 ?f10:
-	ldx     #_msg_superzapper_recharge ; "SUPERZAPPER RECHARGE"
+	ldx     #_msg_en_superzapper_recharge ; "SUPERZAPPER RECHARGE"
 	jsr     vapp_msg
-	ldx     #_msg_level2 ; "LEVEL"
+	ldx     #_msg_en_level2 ; "LEVEL"
 	jsr     vapp_msg
 ?f11:
 	rts
@@ -11297,7 +11297,7 @@ draw_header:
 
 
 game_mode_msg_play:
-	ldx     #_msg_play ; "PLAY"
+	ldx     #_msg_en_play ; "PLAY"
 	jsr     vapp_msg
 	jmp     game_mode_msg_game_over_f1
 
@@ -11305,7 +11305,7 @@ game_mode_msg_play:
 
 game_mode_msg_game_over:
 	lda     #$30
-	ldx     #_msg_game_over ; "GAME OVER"
+	ldx     #_msg_en_game_over ; "GAME OVER"
 	jsr     vapp_msg_at_y
 
 
@@ -11324,21 +11324,21 @@ game_mode_msg_game_over_f1:
 game_mode_msg_press_start:
 	jsr     La8b4
 	lda     #$00
-	ldx     #_msg_press_start ; "PRESS START"
+	ldx     #_msg_en_press_start ; "PRESS START"
 	jmp     vapp_msg_at_y
 
 
 
 game_mode_msg_2_credit_minimum:
 	lda     #$00
-	ldx     #_msg_2_credit_minimum ; "2 CREDIT MINIMUM"
+	ldx     #_msg_en_2_credit_minimum ; "2 CREDIT MINIMUM"
 	jsr     vapp_msg_at_y
 	lda     timectr
 	and     #$1f
 	cmp     #$10
 	bcs     ?f1
 	lda     #$e0
-	ldx     #_msg_insert_coins ; "INSERT COINS"
+	ldx     #_msg_en_insert_coins ; "INSERT COINS"
 	jsr     vapp_msg_at_y
 ?f1:
 	jmp     La8b4
@@ -11347,7 +11347,7 @@ game_mode_msg_2_credit_minimum:
 
 ; show PLAYER and current player number
 show_plyno:
-	ldx     #_msg_player ; "PLAYER "
+	ldx     #_msg_en_player ; "PLAYER "
 	jsr     vapp_msg
 Laa97:
 	lda     #$00
@@ -11379,7 +11379,7 @@ show_coin_stuff:
 	lda     timectr
 	and     #$20 ; flash
 	bne     ?f1
-	ldx     #_msg_2_credit_minimum ; "2 CREDIT MINIMUM"
+	ldx     #_msg_en_2_credit_minimum ; "2 CREDIT MINIMUM"
 	jsr     vapp_msg
 	clv
 	bvc     ?f2
@@ -11387,9 +11387,9 @@ show_coin_stuff:
 	jsr     Laeca
 ?f2:
 Laace:
-	ldx     #_msg_copyright ; "(c) MCMLXXX ATARI"
+	ldx     #_msg_en_copyright ; "(c) MCMLXXX ATARI"
 	jsr     vapp_msg
-	ldx     #_msg_credits ; "CREDITS "
+	ldx     #_msg_en_credits ; "CREDITS "
 	jsr     vapp_msg
 	; If the number of game credits exceed $28 (40), then reduce it
 	; back down to 40.
@@ -11469,7 +11469,7 @@ vapp_vcentre_20:
 ;
 ; In:
 ;  A: y coordinate of message (vapp_msg_at_y only, vapp_msg gets the coordinate
-;     from Ld121)
+;     from msg_attr_table)
 ;  X: message number; an index into the message table pointed at by strtbl
 ;
 ; Out:
@@ -11481,7 +11481,7 @@ vapp_vcentre_20:
 ;    number of chars in msg * vjsr (2 bytes)
 
 vapp_msg:
-	lda     Ld121+1,x	; Get the Y coordinate of the message
+	lda     msg_attr_table+1,x	; Get the Y coordinate of the message
 vapp_msg_at_y:
 	stx     L35		; Save the message number
 	sta     L2b		; Save the Y coordinate
@@ -11500,7 +11500,7 @@ vapp_msg_at_y:
 
 ; If we're displaying the copyright message, save the location in video RAM
 ; where it's displayed, for the checksumming code at Lb1df and Lb27d.
-	cpx     #_msg_copyright ; "(c) MCMLXXX ATARI"
+	cpx     #_msg_en_copyright ; "(c) MCMLXXX ATARI"
 	bne     ?f1
 	lda     vidptr_l
 	sta     copyr_vid_loc
@@ -11550,7 +11550,7 @@ vapp_common:
 	; Get the message color
 
 	ldx     L35		; The msg number
-	lda     Ld121,x		; msg color and size
+	lda     msg_attr_table,x		; msg color and size
 	pha
 	lsr     a		; Color is in the high nibble; get it
 	lsr     a
@@ -11991,15 +11991,15 @@ game_mode_enter_initials:
 	jsr     vapp_msg_at_y
 	dec     L016e
 	jsr     Laa97
-	ldx     #_msg_enter_your_initials ; "ENTER YOUR INITIALS"
+	ldx     #_msg_en_enter_your_initials ; "ENTER YOUR INITIALS"
 	jsr     vapp_msg
 	lda     #$a6
-	ldx     #_msg_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
+	ldx     #_msg_en_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
 	jsr     vapp_msg_at_y
 	lda     #$9c
-	ldx     #_msg_press_fire_to_select ; "PRESS FIRE TO SELECT"
+	ldx     #_msg_en_press_fire_to_select ; "PRESS FIRE TO SELECT"
 	jsr     vapp_msg_at_y
-	ldx     #_msg_copyright ; "(c) MCMLXXX ATARI"
+	ldx     #_msg_en_copyright ; "(c) MCMLXXX ATARI"
 	;.local
 	jsr     vapp_msg
 	lda     hs_whichletter
@@ -12055,7 +12055,7 @@ game_mode_high_scores:
 	lda     #$ff
 Lae4e:
 	sta     L63
-	ldx     #_msg_high_scores ; "HIGH SCORES"
+	ldx     #_msg_en_high_scores ; "HIGH SCORES"
 	jsr     vapp_msg
 	lda     #$01
 	sta     L61
@@ -12123,7 +12123,7 @@ Laeca:
 	lda     bonus_life_each
 	beq     ?f1
 	sta     L58
-	ldx     #_msg_bonus_every ; "BONUS EVERY "
+	ldx     #_msg_en_bonus_every ; "BONUS EVERY "
 	jsr     vapp_msg
 	lda     #$00
 	sta     L56
@@ -12180,7 +12180,7 @@ Laf26:
 	lda     L0600
 	ora     L0601
 	beq     ?f2
-	ldx     #_msg_ranking_from_1_to_
+	ldx     #_msg_en_ranking_from_1_to_
 	jsr     vapp_msg
 	lda     #$63
 	jsr     Laf71
@@ -12351,7 +12351,7 @@ game_mode_copyright:
 	sta     draw_z
 	; Append a vcentre to the display list
 	jsr     vapp_vcentre_20
-	ldx     #_msg_time ; "TIME"
+	ldx     #_msg_en_time ; "TIME"
 	jsr     vapp_msg
 
 	; Append the countdown timer value to the display list
@@ -12401,14 +12401,14 @@ game_mode_copyright:
 	.byte	$be, $e3, $09, $30, $58
 
 ?selfrate_msgs:
-	.byte	_msg_rate_yourself ; "RATE YOURSELF"
-	.byte	_msg_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
-	.byte	_msg_press_fire_to_select ; "PRESS FIRE TO SELECT"
-	.byte	_msg_novice ; "NOVICE"
-	.byte	_msg_expert ; "EXPERT"
-	.byte	_msg_level ; "LEVEL"
-	.byte	_msg_hole ; "HOLE"
-	.byte	_msg_bonus ; "BONUS"
+	.byte	_msg_en_rate_yourself ; "RATE YOURSELF"
+	.byte	_msg_en_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
+	.byte	_msg_en_press_fire_to_select ; "PRESS FIRE TO SELECT"
+	.byte	_msg_en_novice ; "NOVICE"
+	.byte	_msg_en_expert ; "EXPERT"
+	.byte	_msg_en_level ; "LEVEL"
+	.byte	_msg_en_hole ; "HOLE"
+	.byte	_msg_en_bonus ; "BONUS"
 
 ; Used at Lb083 to draw the box around the selected level, on the starting
 ; level selection screen.
@@ -15535,7 +15535,7 @@ Lc30d:
 	ldx     L0110
 	beq     ?f3
 	rts
-?f3:				; code doesn't get here
+?f3:
 	ldx     L0113
 	bne     ?f4
 	rts
@@ -17898,7 +17898,7 @@ update_sounds:	; interrupt code
 ?f6:
 ; the byte fetched form Lc0[X] overflowed, pretend that Y is wider
 ; by adding $100 to the array base address
-	; Copy out of Lcbd1 word array into Ld0 and Lf0`
+	; Copy out of Lcbd1 word array into Ld0 and Lf0
 	lda     Lcbd1-6+$100,y
 	sta     Ld0,x
 	lda     Lcbd1-3+$100,y
@@ -18542,65 +18542,65 @@ check_coin_sw:	; interrupt code
 
 
 msgs_en:
-_msg_game_over = *-msgs_en
+_msg_en_game_over = *-msgs_en
 	.word   msg_en_game_over ; "GAME OVER"
-_msg_player = *-msgs_en
+_msg_en_player = *-msgs_en
         .word   msg_en_player ; "PLAYER "
-_msg_player2 = *-msgs_en
+_msg_en_player2 = *-msgs_en
         .word   msg_en_player ; "PLAYER "
-_msg_press_start = *-msgs_en
+_msg_en_press_start = *-msgs_en
         .word   msg_en_press_start ; "PRESS START"
-_msg_play = *-msgs_en
+_msg_en_play = *-msgs_en
         .word   msg_en_play ; "PLAY"
-_msg_enter_your_initials = *-msgs_en
+_msg_en_enter_your_initials = *-msgs_en
         .word   msg_en_enter_your_initials ; "ENTER YOUR INITIALS"
-_msg_spin_knob_to_change = *-msgs_en
+_msg_en_spin_knob_to_change = *-msgs_en
         .word   msg_en_spin_knob_to_change ; "SPIN KNOB TO CHANGE"
-_msg_press_fire_to_select = *-msgs_en
+_msg_en_press_fire_to_select = *-msgs_en
         .word   msg_en_press_fire_to_select ; "PRESS FIRE TO SELECT"
-_msg_high_scores = *-msgs_en
+_msg_en_high_scores = *-msgs_en
         .word   msg_en_high_scores ; "HIGH SCORES"
-_msg_ranking_from_1_to_ = *-msgs_en
+_msg_en_ranking_from_1_to_ = *-msgs_en
         .word   msg_en_ranking_from_1_to_ ; "RANKING FROM 1 TO "
-_msg_rate_yourself = *-msgs_en
-        .word   msg_en_rate_youself ; "RATE YOURSELF"
-_msg_novice = *-msgs_en
+_msg_en_rate_yourself = *-msgs_en
+        .word   msg_en_rate_yourself ; "RATE YOURSELF"
+_msg_en_novice = *-msgs_en
         .word   msg_en_novice ; "NOVICE"
-_msg_expert = *-msgs_en
+_msg_en_expert = *-msgs_en
         .word   msg_en_expert ; "EXPERT"
-_msg_bonus = *-msgs_en
+_msg_en_bonus = *-msgs_en
         .word   msg_en_bonus ; "BONUS"
-_msg_time = *-msgs_en
+_msg_en_time = *-msgs_en
         .word   msg_en_time ; "TIME"
-_msg_level = *-msgs_en
+_msg_en_level = *-msgs_en
         .word   msg_en_level ; "LEVEL"
-_msg_hole = *-msgs_en
+_msg_en_hole = *-msgs_en
         .word   msg_en_hole ; "HOLE"
-_msg_insert_coins = *-msgs_en
+_msg_en_insert_coins = *-msgs_en
         .word   msg_en_insert_coins ; "INSERT COINS"
-_msg_free_play = *-msgs_en
+_msg_en_free_play = *-msgs_en
         .word   msg_en_free_play ; "FREE PLAY"
-_msg_1_coin_2_plays = *-msgs_en
+_msg_en_1_coin_2_plays = *-msgs_en
         .word   msg_en_1_coin_2_plays ; "1 COIN 2 PLAYS"
-_msg_1_coin_1_play = *-msgs_en
+_msg_en_1_coin_1_play = *-msgs_en
         .word   msg_en_1_coin_1_play ; "1 COIN 1 PLAY"
-_msg_2_coins_1_play = *-msgs_en
+_msg_en_2_coins_1_play = *-msgs_en
         .word   msg_en_2_coins_1_play ; "2 COINS 1 PLAY"
-_msg_copyright = *-msgs_en
+_msg_en_copyright = *-msgs_en
         .word   msg_en_copyright ; "(c) MCMLXXX ATARI"
-_msg_credits = *-msgs_en
+_msg_en_credits = *-msgs_en
         .word   msg_en_credits ; "CREDITS "
-_msg_bonus2 = *-msgs_en
+_msg_en_bonus2 = *-msgs_en
         .word   msg_en_bonus2 ; "BONUS "
-_msg_2_credit_minimum = *-msgs_en
+_msg_en_2_credit_minimum = *-msgs_en
         .word   msg_en_2_credit_minimum ; "2 CREDIT MINIMUM"
-_msg_bonus_every = *-msgs_en
+_msg_en_bonus_every = *-msgs_en
         .word   msg_en_bonus_every ; "BONUS EVERY "
-_msg_avoid_spikes = *-msgs_en
+_msg_en_avoid_spikes = *-msgs_en
         .word   msg_en_avoid_spikes ; "AVOID SPIKES"
-_msg_level2 = *-msgs_en
+_msg_en_level2 = *-msgs_en
         .word   msg_en_level2 ; "LEVEL"
-_msg_superzapper_recharge = *-msgs_en
+_msg_en_superzapper_recharge = *-msgs_en
         .word   msg_en_superzapper_recharge ; "SUPERZAPPER RECHARGE"
 
 msgs_fr:
@@ -18614,7 +18614,7 @@ msgs_fr:
         .word   msg_fr_press_fire_to_select ; "POUSSEZ FEU QUAND CORRECTE"
         .word   msg_fr_high_scores ; "MEILLEURS SCORES"
         .word   msg_fr_ranking_from_1_to_ ; "PLACEMENT DE 1 A "
-        .word   msg_fr_rate_youself ; "EVALUEZ-VOUS"
+        .word   msg_fr_rate_yourself ; "EVALUEZ-VOUS"
         .word   msg_fr_novice ; "NOVICE"
         .word   msg_fr_expert ; "EXPERT"
         .word   msg_fr_bonus ; "BONUS"
@@ -18646,7 +18646,7 @@ msgs_de:
         .word   msg_de_press_fire_to_select ; "FIRE DRUECKEN WENN RICHTIG"
         .word   msg_de_high_scores ; "HOECHSTZAHLEN"
         .word   msg_de_ranking_from_1_to_ ; "RANGLISTE VON 1 ZUM "
-        .word   msg_de_rate_youself ; "SELBST RECHNEN"
+        .word   msg_de_rate_yourself ; "SELBST RECHNEN"
         .word   msg_de_novice ; "ANFAENGER"
         .word   msg_de_expert ; "ERFAHREN"
         .word   msg_de_bonus ; "BONUS"
@@ -18678,7 +18678,7 @@ msgs_es:
         .word   msg_es_press_fire_to_select ; "OPRIMA FIRE PARA SELECCIONAR"
         .word   msg_es_high_scores ; "RECORDS"
         .word   msg_es_ranking_from_1_to_ ; "RANKING DE 1 A "
-        .word   msg_es_rate_youself ; "CALIFIQUESE"
+        .word   msg_es_rate_yourself ; "CALIFIQUESE"
         .word   msg_es_novice ; "NOVICIO"
         .word   msg_es_expert ; "EXPERTO"
         .word   msg_es_bonus ; "BONUS"
@@ -18706,7 +18706,7 @@ msgs_es:
 ; colour in its high nibble, with its size (b value) in its low nibble.
 ; The second byte is the Y coordinate (signed).
 ; See the code at ab14 for more.
-Ld121:
+msg_attr_table:
 	.byte	$51
 	.byte	$56 ; 86 (GAME OVER)
 	.byte	$00
@@ -18771,7 +18771,7 @@ Ld121:
 
 
 ; Each string is preceded by the X-coordinate at which it should be drawn.
-; Y-coordinates come from a table at Ld121 (they don't vary with string
+; Y-coordinates come from a table at msg_attr_table (they don't vary with string
 ; length and hence don't have to be language-specific; X coordinates do,
 ; so they are attached to the language-specific strings).
 ; See the code at vapp_msg for more.
@@ -18794,18 +18794,22 @@ msg_es_game_over:
 	.byte	<-45,_J,_U,_E,_G,_O,__,_T,_E,_R,_M,_I,_N,_A,_D,_O|_eos
 
 msg_en_player:
+msg_en_player2:
 	; -51 "PLAYER "
 	.byte	<-51,_P,_L,_A,_Y,_E,_R,__|_eos
 
 msg_fr_player:
+msg_fr_player2:
 	; -58 -- should this be -51 maybe? ; "JOUEUR "
 	.byte	<-58,_J,_O,_U,_E,_U,_R,__|_eos
 
 msg_de_player:
+msg_de_player2:
 	; -58 "SPIELER "
 	.byte	<-58,_S,_P,_I,_E,_L,_E,_R,__|_eos
 
 msg_es_player:
+msg_es_player2:
 	; -58 "JUGADOR "
 	.byte	<-58,_J,_U,_G,_A,_D,_O,_R,__|_eos
 
@@ -18921,19 +18925,19 @@ msg_es_ranking_from_1_to_:
 	; -56 "RANKING DE 1 A "
 	.byte	<-56,_R,_A,_N,_K,_I,_N,_G,__,_D,_E,__,_1,__,_A,__|_eos
 
-msg_en_rate_youself:
+msg_en_rate_yourself:
 	; -39 "RATE YOURSELF"
 	.byte	<-39,_R,_A,_T,_E,__,_Y,_O,_U,_R,_S,_E,_L,_F|_eos
 
-msg_fr_rate_youself:
+msg_fr_rate_yourself:
 	; -36 "EVALUEZ-VOUS"
 	.byte	<-36,_E,_V,_A,_L,_U,_E,_Z,_mi,_V,_O,_U,_S|_eos
 
-msg_de_rate_youself:
+msg_de_rate_yourself:
 	; -42 "SELBST RECHNEN"
 	.byte	<-42,_S,_E,_L,_B,_S,_T,__,_R,_E,_C,_H,_N,_E,_N|_eos
 
-msg_es_rate_youself:
+msg_es_rate_yourself:
 	; -33 "CALIFIQUESE"
 	.byte	<-33,_C,_A,_L,_I,_F,_I,_Q,_U,_E,_S,_E|_eos
 
