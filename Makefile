@@ -130,7 +130,7 @@ $(PIRATE_DIR)/136002.123 : tempestp
 	dd if=tempestp of=$(PIRATE_DIR)/136002.119 bs=2048 count=1 skip=24 status=noxfer; \
 	dd if=tempestp of=$(PIRATE_DIR)/136002.120 bs=2048 count=1 skip=25 status=noxfer; \
 	dd if=tempestp of=$(PIRATE_DIR)/136002.121 bs=2048 count=1 skip=26 status=noxfer; \
-	dd if=tempestp of=$(PIRATE_DIR)/136002.122 bs=2048 count=1 skip=27 status=noxfer; )>/dev/null 2>1
+	dd if=tempestp of=$(PIRATE_DIR)/136002.122 bs=2048 count=1 skip=27 status=noxfer; )>/dev/null 2>&1
 
 tempestv1.rom :	2048.zeros \
                 $(V1_DIR)/136002.123 \
