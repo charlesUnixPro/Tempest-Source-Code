@@ -18531,15 +18531,9 @@ check_coin_sw:	; interrupt code
 ?f24:
 	rts
 
-
-
-
-
-
-
-
-
-
+.ifdef USE_M4
+.include "tempest.inc"
+.else ; !USE_M4
 
 msgs_en:
 _msg_en_game_over = *-msgs_en
@@ -18767,7 +18761,7 @@ msg_attr_table:
 	.byte	$5a ; 90 (LEVEL)
 	.byte	$71
 	.byte	$a0 ; -96 (SUPERZAPPER RECHARGE)
-
+.endif ; !USE_M4
 
 
 ; Each string is preceded by the X-coordinate at which it should be drawn.

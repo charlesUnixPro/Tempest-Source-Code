@@ -1,5 +1,14 @@
 AFLAGS = -l 
 
+# Set to 1 to use the m4 generated language tables
+USE_M4 = 0
+
+ifdef USE_M4
+INCS = tempest.inc
+else
+INCS =
+endif
+
 all : tempestv1 tempestv2 tempestv3 tempestp ascii makepirate
 
 ascii : ascii.c
@@ -12,28 +21,33 @@ clean :
 	-rm tempestp.obj  tempestp tempestp.lst
 	-rm 2048.zeros
 	-rm ascii
+ifdef USE_M4
+	-rm tempest.inc
+endif
 
+tempest.inc : tempest.m4
+	m4 tempest.m4 > tempest.inc
 
-tempestv1 : tempest.a65 tempestv1.rom
-	ca65 $(AFLAGS) -DVER=1 -DPIRATE=0 -o tempestv1.obj tempest.a65
+tempestv1 : tempest.a65 tempestv1.rom $(INCS)
+	ca65 $(AFLAGS) -DVER=1 -DPIRATE=0 -DUSE_M4=$(USE_M4) -o tempestv1.obj tempest.a65
 	mv tempest.lst tempestv1.lst
 	ld65 tempestv1.obj -S 0 -o tempestv1 -C tempest.cfg
-	cmp -b tempestv1 tempestv1.rom || ($(MAKE) diffs1 diffs11 && exit 1)
+	cmp -b tempestv1 tempestv1.rom || ($(MAKE) diffs T=tempestv1 && exit 1)
 
-tempestv2 : tempest.a65 tempestv2.rom
-	ca65 $(AFLAGS) -DVER=2 -DPIRATE=0 -o tempestv2.obj tempest.a65
+tempestv2 : tempest.a65 tempestv2.rom $(INCS)
+	ca65 $(AFLAGS) -DVER=2 -DPIRATE=0 -DUSE_M4=$(USE_M4) -o tempestv2.obj tempest.a65
 	mv tempest.lst tempestv2.lst
 	ld65 tempestv2.obj -S 0 -o tempestv2 -C tempest.cfg
-	cmp -b tempestv2 tempestv2.rom || ($(MAKE) diffs2 diffs21 && exit 1)
+	cmp -b tempestv2 tempestv2.rom || ($(MAKE) diffs T=tempestv2 && exit 1)
 
-tempestv3 : tempest.a65 tempestv3.rom
-	ca65 $(AFLAGS) -DVER=3 -DPIRATE=0 -o tempestv3.obj tempest.a65
+tempestv3 : tempest.a65 tempestv3.rom $(INCS)
+	ca65 $(AFLAGS) -DVER=3 -DPIRATE=0 -DUSE_M4=$(USE_M4) -o tempestv3.obj tempest.a65
 	mv tempest.lst tempestv3.lst
 	ld65 tempestv3.obj -S 0 -o tempestv3 -C tempest.cfg
-	cmp -b tempestv3 tempestv3.rom || ($(MAKE) diffs3 diffs31 && exit 1)
+	cmp -b tempestv3 tempestv3.rom || ($(MAKE) diffs T=tempestv3 && exit 1)
 
-tempestp : tempest.a65 
-	ca65 $(AFLAGS) -DVER=1 -DPIRATE=1 -o tempestp.obj tempest.a65
+tempestp : tempest.a65  $(INCS)
+	ca65 $(AFLAGS) -DVER=1 -DPIRATE=1 -DUSE_M4=$(USE_M4) -o tempestp.obj tempest.a65
 	mv tempest.lst tempestp.lst
 	ld65 tempestp.obj -S 0 -o tempestp -C tempest.cfg
 
@@ -83,30 +97,11 @@ tempestv3.rom.od1 : tempestv3.rom.od
 	cut -c 8- < tempestv3.rom.od >tempestv3.rom.od1
 
 
+diffs :: $(T).od $(T).rom.od
+	xxdiff $(T).od $(T).rom.od &
 
-
-diffs1 : tempestv1.od tempestv1.rom.od
-	xxdiff tempestv1.od tempestv1.rom.od &
-
-diffs11 : tempestv1.od1 tempestv1.rom.od1
-	xxdiff tempestv1.od1 tempestv1.rom.od1 &
-
-
-diffs2 : tempestv2.od tempestv2.rom.od
-	xxdiff tempestv2.od tempestv2.rom.od &
-
-diffs21 : tempestv2.od1 tempestv2.rom.od1
-	xxdiff tempestv2.od1 tempestv2.rom.od1 &
-
-
-
-diffs3 : tempestv3.od tempestv3.rom.od
-	xxdiff tempestv3.od tempestv3.rom.od &
-
-diffs31 : tempestv3.od1 tempestv3.rom.od1
-	xxdiff tempestv3.od1 tempestv3.rom.od1 &
-
-
+diffs :: $(T).od1 $(T).rom.od1
+	xxdiff $(T).od1 $(T).rom.od1 &
 
 2048.zeros :
 	dd if=/dev/zero of=2048.zeros count=1 bs=2048 status=noxfer
@@ -116,21 +111,26 @@ V2_DIR = roms/ver2/
 V3_DIR = roms/ver3/
 PIRATE_DIR = roms/Tempest/
 
-makepirate : tempestp
-	dd if=tempestp of=$(PIRATE_DIR)/136002.123 bs=2048 count=1 skip=6 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.124 bs=2048 count=1 skip=7 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.p0 bs=2048 count=1 skip=16 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.p1 bs=2048 count=1 skip=17 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.113 bs=2048 count=1 skip=18 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.114 bs=2048 count=1 skip=19 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.115 bs=2048 count=1 skip=20 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.116 bs=2048 count=1 skip=21 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.117 bs=2048 count=1 skip=22 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.118 bs=2048 count=1 skip=23 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.119 bs=2048 count=1 skip=24 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.120 bs=2048 count=1 skip=25 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.121 bs=2048 count=1 skip=26 status=noxfer
-	dd if=tempestp of=$(PIRATE_DIR)/136002.122 bs=2048 count=1 skip=27 status=noxfer
+.PHONY : makepirate
+
+makepirate : $(PIRATE_DIR)/136002.123
+
+$(PIRATE_DIR)/136002.123 : tempestp
+	@echo "Making pirate roms..."
+	@(dd if=tempestp of=$(PIRATE_DIR)/136002.123 bs=2048 count=1 skip=6 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.124 bs=2048 count=1 skip=7 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.p0 bs=2048 count=1 skip=16 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.p1 bs=2048 count=1 skip=17 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.113 bs=2048 count=1 skip=18 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.114 bs=2048 count=1 skip=19 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.115 bs=2048 count=1 skip=20 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.116 bs=2048 count=1 skip=21 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.117 bs=2048 count=1 skip=22 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.118 bs=2048 count=1 skip=23 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.119 bs=2048 count=1 skip=24 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.120 bs=2048 count=1 skip=25 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.121 bs=2048 count=1 skip=26 status=noxfer; \
+	dd if=tempestp of=$(PIRATE_DIR)/136002.122 bs=2048 count=1 skip=27 status=noxfer; )>/dev/null 2>1
 
 tempestv1.rom :	2048.zeros \
                 $(V1_DIR)/136002.123 \
