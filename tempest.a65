@@ -451,14 +451,15 @@ leds_flip = $60e0
 	; bit $02 two  player start / 2 player start LED
 	; bit $04 use 2 player controls on cocktail games
 	;                           / flip player start 
-	; ?? SAEN 2,3 (a debugging signal on the small connector on the aux board)
+	; bit $08 SAEN 2,3 (a debugging signal on the small connector on the aux board)
 
 ; Write bits
-leds_flip_1p_led_val	=	$01
-leds_flip_2p_lev_val	=	$02
-leds_flip_alt_cntrls	=	$04
-leds_flip_alt_mask	=	$04
-
+_leds_flip_1p_led_val	=	$01
+_leds_flip_2p_led_val	=	$02
+_leds_flip_led_mask	=	$03
+_leds_flip_alt_cntrls	=	$04
+_leds_flip_alt_mask	=	$04
+_legs_flip_debug	=	$08
 
 ;;;
 ;;; Switch register @ 0c00
@@ -473,14 +474,14 @@ cabsw = $0c00
 	; $20 = diagnostic step switch
 	; $40 = halt bit from vector processor
 	; $80 = 3KHz square wave
-cabsw_r_coin_sw_mask	=	$01
-cabsw_m_coin_sw_mask	=	$02
-cabsw_l_coin_sw_mask	=	$04
-cabsw_slam_sw_mask	=	$08
-cabsw_service_sw_mask	=	$10
-cabsw_diag_sw_mask	=	$20
-cabsw_vg_halt_mask	=	$40
-cabsw_3khz_mask		=	$80
+_cabsw_r_coin_sw_mask	=	$01
+_cabsw_m_coin_sw_mask	=	$02
+_cabsw_l_coin_sw_mask	=	$04
+_cabsw_slam_sw_mask	=	$08
+_cabsw_service_sw_mask	=	$10
+_cabsw_diag_sw_mask	=	$20
+_cabsw_vg_halt_mask	=	$40
+_cabsw_3khz_mask	=	$80
 
 
 ;;;
@@ -650,10 +651,28 @@ mb_cmd_divide		=	mb_cmd_14
 ; Unfortunately, I can find no data on the EEPROM chip they used, so I can't 
 ; divine how the control signals are used.
 ;
+; cac -  It is a ER2055 "512 bit Electrically Alterable Read Only Memory
+; From the schematic, the wiring to earom_ctrl is:
 ;
+;   Bit 0: CLK
+;       1: C2
+;       2: !C1
+;       3: CS1
+;   
 
 earom_write = $6000	; EEPROM write
-earom_ctrl_wr = $6040	; EEPROM control WO
+
+earom_ctrl = $6040	; EEPROM control WO
+_earom_ctrl_cs1 = $08
+_earom_ctrl_not_c1 = $04
+_earom_ctrl_c2 = $02
+_earom_ctrl_clk = $01
+
+_earom_ctrl_rd = _earom_ctrl_cs1 ; CS1 | C1 
+_earom_ctrl_rdclk = _earom_ctrl_cs1 | _earom_ctrl_clk ; CS1 | C1 | CLK
+_earom_ctrl_er = _earom_ctrl_cs1 | _earom_ctrl_not_c1 | _earom_ctrl_c2 ; CS1 | C2
+_earom_ctrl_wr = _earom_ctrl_cs1 | _earom_ctrl_not_c1 ; CS1 
+
 earom_rd = $6050	; EEPROM read 
 
 
@@ -1116,6 +1135,8 @@ L86:		.res	1
 L87:		.res	1
 L88:		.res	1
 
+; checksum table ends
+
 L89:		.res	1		; 89
 L8a:		.res	1		; 8a
 L8b:		.res	1		; 8b
@@ -1193,7 +1214,9 @@ copyr_vid_loc:	.res	2		; b6 b7
 		.res	1		; ba
 		.res	1		; bb
 		.res	1		; bc
-; Pointer to RAM version of current EAROM block.  See $de{64,9a,9c,d8,ee}.
+
+; Pointer to RAM copy of current EAROM block. 
+
 earom_memptr:	.res	2		; bd be
 
 ; Sound table lock. Contains the row number when the tables are being updated.
@@ -1414,9 +1437,11 @@ copyr_disp_cksum1:	.res	1		; 016c
 pulsar_fire:	.res	1			; 016d
 
 L016e:		.res	88
+
 ; $00 or $ff.  Used when diddling EAROM stuff; zero means copy from RAM
 ; to EAROM; $ff means clear both RAM and EAROM.
 earom_clr:	.res	1			; 01c6
+
 ; This is used only at Ldb5d and a number of places Lde03-Lde4f.
 ; This appears to be flag bits indicating which areas to save/load.
 L01c7:		.res	1			; 01c7
@@ -1429,20 +1454,32 @@ L01c8:		.res	1			; 01c8
 ; I don't think any of its other bits are used or set, at least not in
 ; normal operation.  (Ldb65 makes me think selftest might use it.)
 hs_initflag:	.res	1			; 01c9
+
 ; EAROM operation in progress.
 ; Set to $80 to write (clear?)
 ; Set to $20 to read
 ; $40 is used internally by the $80 support code
+
 earom_op:	.res	1			; 01ca
+
 ; Offset from ($bd), cleared at Lde27, incremented at Ldef9, used Lde{76,d5}
+
 earom_blkoff:	.res	1			; 01cb
+
 ; Current location in EAROM; see Lde58/Lde79/Ldefc.
+
 earom_ptr:	.res	1			; 01cc
+
 ; End of current block in EAROM; see Lde5e/Lde9e/Ldec6.
+
 earom_blkend:	.res	1			; 01cd
+
 L01ce:		.res	1			; 01ce
+
 ; Checksum of block being currently read or written.
+
 earom_cksum:	.res	1			; 01cf
+
 ; End of CPU stack. Interrupt handler will issue a BREAK it sees the stack 
 ; grow beyond this point.
 		.res	47
@@ -16641,7 +16678,7 @@ check_start:
 ; Called from main_loop  ?25 times a second
 Lc891:
 	lda     cabsw
-	and     #cabsw_service_sw_mask ; service mode
+	and     #_cabsw_service_sw_mask ; service mode
 	bne     ?f1
 	lda     #_game_state_test_menu	; Set game_state to "test menu"
 	sta     game_state
@@ -17051,7 +17088,7 @@ setup_inverted:
 	; invert the X axis and not the Y.
 
 	; Invert the X axis
-	lda     #leds_flip_alt_cntrls
+	lda     #_leds_flip_alt_cntrls
 	ldy     #vid_coins_invert_x_mask
 
 
@@ -17065,7 +17102,7 @@ setup_inverted:
 
 	; Set or reset the alternate controls bit in leds_flip shadow
 	eor     leds_flip_shadow
-	and     #leds_flip_alt_mask
+	and     #_leds_flip_alt_mask
 	eor     leds_flip_shadow
 	sta     leds_flip_shadow
 
@@ -18362,7 +18399,7 @@ check_coin_sw:	; interrupt code
 
 	; Check the slam switch
 	lda     a:cabsw_shadow
-	and     #cabsw_slam_sw_mask
+	and     #_cabsw_slam_sw_mask
 	bne     ?l5
 
 	; Slam switch on
@@ -19439,7 +19476,7 @@ nmi_irq_brk:			; interrupt code
 ?f7:
 	lda     ?credits_vector,x
 	eor     leds_flip_shadow
-	and     #$03
+	and     #_leds_flip_led_mask
 	eor     leds_flip_shadow
 	sta     leds_flip_shadow
 	sta     leds_flip
@@ -19517,18 +19554,24 @@ game_state_test_menu:
 	sta     play_state
 	lda     #_game_mode_service
 	sta     game_mode
+
+	; Test to see if earom is being updated
+
 	lda     earom_op
-	bne     ?f1
+	bne     ?return
+
+	; No, earom is idle
+
 	lda     cabsw
-	and     #cabsw_service_sw_mask ; service switch
-	beq     ?f1
+	and     #_cabsw_service_sw_mask ; service switch
+	beq     ?return
 	lda     #_game_state_0
 	sta     game_state
 	lda     hs_initflag
 	and     #$03
-	beq     ?f1
+	beq     ?return
 	jsr     init_hs
-?f1:
+?return:
 	rts
 
 
@@ -19601,11 +19644,18 @@ game_mode_service:
 	lda     hs_initflag
 	ora     #$03
 	sta     hs_initflag
+
 ; Common code, after magic button sequence handling done
+
 ?f4:
+	; earom_op: Non-zero means earom operation in progress
+	; earom_clr: 0 means copy from RAM to earom, $ff means erase RAM and
+	; earom
 	lda     earom_op
 	and     earom_clr
-	beq     ?f5
+	beq     ?f5	; Branch is not erasing
+
+	; An earom erase is in progress
 
 	; Append a vjsr vg_sub_string_erasing to the display list
 	ldax_im	vg_sub_string_erasing
@@ -19687,8 +19737,16 @@ ram_test_fail:
 ; that the pattern was written to
  
 	tay
+
+; Page 0 failed
+
 	lda     #$00
+
 ram_test_fail_2:
+
+; A contains the page number of the failed memory location, adjusted as
+; described at ram_test_fail_nonzero.
+
 	; Mark the test as failed
 	sty     L79
 	lsr     a
@@ -19772,19 +19830,56 @@ ram_test_fail_2:
 
 
 
+;;;
+;;; Handle RAM test failures
+;;;
 
 
+; Jump here if we read a test byte that turned out to be wrong, but we
+; were not expecting it to be zero.
 
+ram_test_fail_wrong_data:
 
-Ld92f:
+; XXX This makes little sense. The test may have failed on any page of
+; RAM. If the failure was on page 0, and the RAM test has a consistently
+; wrong value, then this would set A to 0. If the RAM results are random,
+; then A would be set to a random value. If the test had moved beyond page
+; 0, the page zero would be all zeros, and this would be a NOP.
+
 	eor     (page0),y
-Ld931:
+
+; Jump here if we read a test byte as non-zero when we expected 0
+
+ram_test_fail_nonzero:
+
+; A contains the value read from memory
+
 	tay
-	lda     game_mode
+
+; The RAM Test tests $0100-$07ff and $2000-$2fff.
+; If the test failed in the first pages, set A to the
+; high byte of the address (the page "number"); if the
+; test failed in the $2000 pages, set A to the high
+; byte of the address - $18.
+;
+;  01  01
+;  02  02
+;  ...
+;  07  07
+;  20  08
+;  21  09
+;  ...
+;  2f  17
+;
+	lda     memory_test_ptr_h
 	cmp     #$20
 	bcc     ?f1
 	sbc     #$18
 ?f1:
+
+; Set A to the low 5 bits of the page number of the failed test
+; page. Since A should be in the range 1-$17, thus should be a no-op.
+
 	and     #$1f
 	jmp     ram_test_fail_2
 
@@ -19859,7 +19954,7 @@ reset:
 
 
 	lda     cabsw
-	and     #cabsw_service_sw_mask ; selftest switch
+	and     #_cabsw_service_sw_mask ; selftest switch
 	beq     selftest_start
 ; reset in non-selftest mode
 
@@ -19987,10 +20082,12 @@ selftest_start:
 
 
 ; Low RAM selftest passed.
+
 ; Test remaning RAM: $0100-$07ff and $2000-$2fff.  For each byte, check
 ; that it's zero (which it should be, we cleared it above), then do a
 ; write-read-compare of $11, $22, $44, and $88 in it.  When done, store a
 ; $00 back in it.
+
 	ldy     #$00
 	ldx     #$01
 ?b6:
@@ -20000,14 +20097,14 @@ selftest_start:
 ?b7:
 	lda     (memory_test_ptr),y
 	beq     ?f8
-	jmp     Ld931
+	jmp     ram_test_fail_nonzero
 ?f8:
 	lda     #$11
 ?b9:
 	sta     (memory_test_ptr),y
 	cmp     (memory_test_ptr),y
 	beq     ?f10
-	jmp     Ld92f
+	jmp     ram_test_fail_wrong_data
 ?f10:
 	asl     a
 	bcc     ?b9
@@ -20024,6 +20121,7 @@ selftest_start:
 	cpx     #$30
 	bcc     ?b6
 
+; RAM test passed
 
 
 checksum_rom:
@@ -20032,19 +20130,21 @@ checksum_rom:
 ; Okay, all RAM passed selftest.
 ; Checksum ROM.  For each $0800 region, XOR all its bytes together and
 ; XOR in its region number (0 for the first, 1 for the second, etc), then
-; store the result in the space at checksum_table.  Ranges for each of the 12 bytes:
-; L7d - $3000-$37ff
-; $7e - $3800-$38ff
-; $7f - $9000-$97ff
-; $80 - $9800-$9fff
-; $81 - $a000-$a7ff
-; $82 - $a800-$afff
-; $83 - $b000-$b7ff
-; $84 - $b800-$bfff
-; $85 - $c000-$c7ff
-; $86 - $c800-$cfff
-; $87 - $d000-$d7ff
-; $88 - $d800-$dfff
+; store the result in the space at checksum_table.  Ranges for each of the 
+; 12 bytes:
+;
+;   L7d - $3000-$37ff
+;   $7e - $3800-$38ff
+;   $7f - $9000-$97ff
+;   $80 - $9800-$9fff
+;   $81 - $a000-$a7ff
+;   $82 - $a800-$afff
+;   $83 - $b000-$b7ff
+;   $84 - $b800-$bfff
+;   $85 - $c000-$c7ff
+;   $86 - $c800-$cfff
+;   $87 - $d000-$d7ff
+;   $88 - $d800-$dfff
 
 
 	; X contains the bank number (0x3000 is bank 0, 
@@ -20104,9 +20204,13 @@ checksum_rom:
 	cpx     #12
 	bcc     ?romloop
 
+; ROM checksum done
+; All checksums computed and stored in checksum_table.
 
 
-	; All checksums computed and stored in checksum_table.
+
+; Make a sound if the first entry in the table is wrong?
+
 	lda     checksum_table
 	beq     ?f14
 	lda     #$40
@@ -20114,6 +20218,13 @@ checksum_rom:
 	sta     pokey1_audf3
 	stx     pokey1_audc3
 ?f14:
+
+
+
+;;;
+;;; Test pokeys. The random numbers should change over time.
+;;;
+
 	ldx     #$05
 	lda     pokey1_rand
 ?b15:
@@ -20133,6 +20244,8 @@ checksum_rom:
 	bpl     ?b17
 	; Mark pokey2 fail
 	sta     L7b
+
+
 ; I'm not sure what Lde11 does, though I suspect it's an earom read.
 ; It appears to be loading stuff into the stats stored at $0406-$0411.
 ?f18:
@@ -20266,7 +20379,7 @@ selftest_main_loop:
 	jsr     Lde1b
 ?f8:
 	lda     cabsw
-	and     #cabsw_service_sw_mask
+	and     #_cabsw_service_sw_mask
 	beq     selftest_main_loop
 
 ; We depend on something else to break us out of this loop.  I suspect
@@ -20327,22 +20440,29 @@ draw_selftest_scr:
 
 
 selftest_6:
-	lda     #$00
+
+	lda     #0
 	sta     leds_flip
 	sta     mb_set_00_l
 	sta     pokey1_audf1
 	sta     pokey2_audf1
 	sta     earom_write
-	sta     earom_ctrl_wr
+	sta     earom_ctrl
+
 	lda     mb_status_rd
 	lda     mb_rd_l
 	lda     mb_rd_h
 	lda     earom_rd
-	lda     #$08
+
+	; Turn off 1 player LED, 2 player LED, alternate controls.
+	; Turn on debug signal
+
+	lda     #_legs_flip_debug
 	sta     leds_flip
 
 	; Store a rotating single bit1 in every mathbox register
 	; This includes the odd 1f selftest register....
+
 	lda     #$01
 	ldx     #$1f
 	clc
@@ -21226,18 +21346,16 @@ Lde1b:
 	asl     a
 	tax
 	lda     earom_offset_table,x
-;Lde58
-	sta     earom_ptr
+	sta     earom_ptr			; Lde58
 	lda     earom_offset_table+1,x
-;Lde5e
-	sta     earom_blkend
+	sta     earom_blkend			; Lde5e
 	lda     ram_addr_table,x
 	sta     earom_memptr
 	lda     ram_addr_table+1,x
 	sta     earom_memptr+1
 ?f4a:
 	ldy     #$00
-	sty     earom_ctrl_wr
+	sty     earom_ctrl
 	lda     earom_op
 	bne     ?f5a
 	rts
@@ -21251,7 +21369,7 @@ Lde1b:
 	sta     earom_write,x
 	lda     #$40
 	sta     earom_op
-	ldy     #$0e
+	ldy     #_earom_ctrl_er
 	clv
 	bvc     ?f15
 ?f6:
@@ -21273,19 +21391,20 @@ Lde1b:
 	lda     earom_cksum
 ?f8:
 	sta     earom_write,x
-	ldy     #$0c
+	ldy     #_earom_ctrl_wr
 	clv
 	bvc     ?f14
 ; EAROM op $20
 ?f9:
-	lda     #$08
-	sta     earom_ctrl_wr
-	sta     earom_write,x
-	lda     #$09
-	sta     earom_ctrl_wr
+	lda     #_earom_ctrl_rd
+	sta     earom_ctrl
+	sta     earom_write,x	; This latches the address;
+				; the value in A is ignored for earom read
+	lda     #_earom_ctrl_rdclk
+	sta     earom_ctrl
 	nop
-	lda     #$08
-	sta     earom_ctrl_wr
+	lda     #_earom_ctrl_rd
+	sta     earom_ctrl
 ;Ldec6
 	cpx     earom_blkend
 	lda     earom_rd
@@ -21301,9 +21420,13 @@ Lde1b:
 	lda     L01ce
 	ora     hs_initflag
 	sta     hs_initflag
+
 ?f11:
-	lda     #$00
+
+	; Initialize to "no earom operation is progress"
+	lda     #0
 	sta     earom_op
+
 	clv
 	bvc     ?f13
 ?f12:
@@ -21319,7 +21442,7 @@ Lde1b:
 ;Ldefc
 	inc     earom_ptr
 ?f15:
-	sty     earom_ctrl_wr
+	sty     earom_ctrl
 	tya
 	bne     ?f16
 	jmp     Lde1b
