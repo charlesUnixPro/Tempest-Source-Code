@@ -358,10 +358,19 @@ pokey_skctls_setup	=	$07
 ; signal all go to the POKEYs, thusly:
 ; 
 pokey1_spinner_cabtyp	=	$60c8	; R/O
-	;   BITS 0-3: Encoder Wheel
-	;   BIT  4  : Cocktail detection
-	;   BIT  5  : Switch #1 at D/E2
-	;   BITS 6-7: Unused.
+
+;   BITS 0-3: Encoder Wheel		$0f
+;   BIT  4  : Cocktail detection        $10
+;   BIT  5  : Switch #1 at D/E2         $20   
+;   BITS 6-7: Unused.
+;
+; BIT 5/Switch#1 is Marked "unused" in the service manual, and although the
+; get_diff_bits routine collects this bit and saves it in diff_bits, it
+; does not appear to be tested in the code.
+
+_pokey1_encoder_mask	=	$0f
+_pokey1_cocktail_mask	=	$10
+_pokey1_unused_mask	=	$20
 
 pokey1_rand		=	$60ca
 
@@ -387,6 +396,9 @@ pokey2_skctls		=	$60df
 ; Inputs - RO
 
 pokey2_zap_fire_starts	=	$60d8	; R/O
+	; Switch D/E2, switch #2 -> pokey 2 bit 2
+	;                     #3 -> pokey 2 bit 1
+	;                     #4 -> pokey 2 bit 0
 	; $03 = Difficulty
 	;       $00 = Medium
 	;       $01 = Easy
@@ -395,21 +407,22 @@ pokey2_zap_fire_starts	=	$60d8	; R/O
 	; $04 = Rating
 	;       $00 = 1, 3, 5, 7, 9
 	;       $04 = tied to high score
+	;
 	; $08 = zap button
 	; $10 = fire button
 	; $20 = 1p start button
 	; $40 = 2p start button
 	; $80 = unknown (nothing?)
-pokey2_sw_diff_mask	=	$03
-pokey2_sw_diff_val_easy	=	$01
-pokey2_sw_diff_val_medium1	=	$00
-pokey2_sw_diff_val_medium2	=	$03
-pokey2_sw_diff_val_hard	=	$02
-pokey2_btn_rating_mask	=	$04
-pokey2_btn_zap_mask	=	$08
-pokey2_btn_fire_mask	=	$10
-pokey2_btn_start1p_mask	=	$20
-pokey2_btn_start2p_mask	=	$40
+_pokey2_sw_diff_mask	=	$03
+_pokey2_sw_diff_val_easy	=	$01
+_pokey2_sw_diff_val_medium1	=	$00
+_pokey2_sw_diff_val_medium2	=	$03
+_pokey2_sw_diff_val_hard	=	$02
+_pokey2_btn_rating_mask	=	$04
+_pokey2_btn_zap_mask	=	$08
+_pokey2_btn_fire_mask	=	$10
+_pokey2_btn_start1p_mask	=	$20
+_pokey2_btn_start2p_mask	=	$40
 
 pokey2_rand = $60da
 
@@ -433,8 +446,8 @@ vid_coins = $4000
 	;  04 left coind counter
 	;  08 invert X
 	;  10 invert Y
-vid_coins_invert_x_mask	=	$08
-vid_coins_invert_y_mask	=	$10
+_vid_coins_invert_x_mask	=	$08
+_vid_coins_invert_y_mask	=	$10
 
 
 ;;;
@@ -548,10 +561,10 @@ optsw2 = $0e00 ; DIP Switch L12
 	;       $40 = 4
 	;       $80 = 5
 	;       $c0 = 2
-optsw2_min_mask		=	$01
-optsw2_lang_mask	=	$06
-optsw2_pts_needed_mask	=	$38
-optsw2_init_lives_mask	=	$c0
+_optsw2_min_mask		=	$01
+_optsw2_lang_mask	=	$06
+_optsw2_pts_needed_mask	=	$38
+_optsw2_init_lives_mask	=	$c0
 
 ;;;
 ;;; Watchdog
@@ -562,6 +575,7 @@ optsw2_init_lives_mask	=	$c0
 ;  source. D4 divides the signal by 256, which means that a properly running 
 ;  program must access location 5000 at least once every 80 msec or so in 
 ;  order to avoid being reset.
+
 watchdog = $5000
 
 
@@ -701,6 +715,10 @@ earom_rd		=	$6050	; EEPROM read
 	.word	addr - 1
 	.endmac
 
+; ".jump nowhere" generates ".word 0"
+
+nowhere	=	1
+
 ;;;
 ;;; Loading a 16 bit address
 ;;;
@@ -724,10 +742,11 @@ earom_rd		=	$6050	; EEPROM read
 	.endmac
 
 ;;;
-;;; .tail - mark tail recursion, a subroutine returns a jumping into a 
+;;; tail - mark tail recursion, a subroutine returns a jumping into a 
 ;;;         different subroutine
 
-	.macro	.tail
+	.macro	tail	addr
+	jmp	addr
 	.endmac
 
 ;;;
@@ -896,6 +915,7 @@ optsw2_shadow:	.res	1 ; soft shadow of optsw2
 
 		.res	1
 ; Set to 240 when the slam switch is detected, decremented in check_coin_sw
+; which is called 246 times a second, so this should be ~1 second.
 slam_timer:	.res	1
 
 
@@ -916,7 +936,7 @@ L13:		.res	3
 
 coin_string:	.res	1
 uncredited:	.res	1	; coins accepted but not yet converted to credits
-L18:		.res	1
+L18:		.res	1	; used in calculating bonus games for multiple games?
 
 ; col_ram ram shadow
 
@@ -6839,7 +6859,7 @@ L90c4:	lda	L0126			; Find out what level the player
 	bcc	?b1			; X = # of levels to present
 	ldy	#$04
 	lda	diff_bits
-	and	#$04			; rating bit
+	and	#_pokey2_btn_rating_mask	; rating bit
 	beq	?f3			; branch if 1, 3, 4, 7, 9
 	lda	hs_score_1 + 2		; top two digits of high score
 	cmp	#$30			; highest score > 300,000?
@@ -7349,10 +7369,10 @@ setup_level:
 
 	; Get the switch shadow and mask the difficulty bits
 	lda	diff_bits
-	and	#pokey2_sw_diff_mask ; difficulty
+	and	#_pokey2_sw_diff_mask ; difficulty
 
 	; Easy setting?
-	cmp	#pokey2_sw_diff_val_easy ; easy
+	cmp	#_pokey2_sw_diff_val_easy ; easy
 	bne	?not_easy
 
 	; Yes...
@@ -7382,7 +7402,7 @@ setup_level:
 
 ?not_easy:
 	; Hard setting?
-	cmp	#pokey2_sw_diff_val_hard ; hard
+	cmp	#_pokey2_sw_diff_val_hard ; hard
 	bne	?not_hard
 
 	; Yes...
@@ -7737,7 +7757,7 @@ L9683:
 ; lev = current level number
 ; lwb = (((lev-1)&15) + 1 - level # within its block of 16 levels
 L9677_t1:	; L968f
-	.word	0000 ; not used - tested for at L92fb
+	.jump	nowhere ; not used - tested for at L92fb
 	.jump	L968f_02 ; A = b[0]
 	.jump	L968f_04 ; A = b[lev-ltmin]
 	.jump	L968f_06 ; A = b[lwb-ltmin]
@@ -7746,7 +7766,7 @@ L9677_t1:	; L968f
 	.jump	L968f_0c ; A = b[(lev-ltmin)&1]
 ; Jump table used by code at 9683.
 L9677_t2: ; L969d
-	.word	0000 ; not used - tested for at L92fb
+	.jump	nowhere ; not used - tested for at L92fb
 	.jump	L969d_02_0a ; Y += 2
 	.jump	L969d_04_06 ; Y += ltmax - ltmin + 2
 	.jump	L969d_04_06 ; Y += ltmax - ltmin + 2
@@ -7851,7 +7871,7 @@ game_state_4:
 	jsr	enm_shoot
 	jsr	pshot_hit
 	jsr	La416
-	jmp	La504
+	tail	La504
 
 
 game_state_zoom:
@@ -9419,7 +9439,7 @@ p_fuzz:
 L9f81:
 	jsr	p_setdir
 	jsr	p_rev
-	jmp	L9f8a_f4
+	tail	L9f8a_f4
 
 
 
@@ -9454,7 +9474,7 @@ L9f8a_f4:
 ?f3:
 	lda	#$66
 	sta	pcode_pc
-	jmp	L9e5f
+	tail	L9e5f
 
 
 
@@ -9704,7 +9724,7 @@ m_l36:
 	m_rev			; 3f: reverse direction
 	m_br	m_l24		; 40: branch to $24
 
-; Action 0c jumps here upon reaching top-of-tube.
+; Action p_move jumps here upon reaching top-of-tube.
 
 m_l42:
 	m_ldi	4		; 42: store in p_var, x 43: 04
@@ -10146,7 +10166,7 @@ La398:
 	and	#$07
 	tay
 	ldx	?t1, y
-	jmp	inc_score
+	tail	inc_score
 ?t1:
 	.byte	01
 	.byte	02
@@ -10992,7 +11012,7 @@ La888:
 	lda	L028a, y
 	and	#$fc
 	sta	L028a, y
-	jmp	La398
+	tail	La398
 
 
 
@@ -11335,14 +11355,14 @@ draw_header:
 	sta	vidptr_l
 
 	; Append a vrts to the display list
-	jmp	vapp_vrts
+	tail	vapp_vrts
 
 
 
 game_mode_msg_play:
 	ldx	#_msg_en_play ; "PLAY"
 	jsr	vapp_msg
-	jmp	game_mode_msg_game_over_f1
+	tail	game_mode_msg_game_over_f1
 
 
 
@@ -11357,10 +11377,10 @@ game_mode_msg_game_over_f1:
 	jsr	show_plyno
 
 .if (VER=1) | (VER=2)
-	jmp	La8b4
+	tail	La8b4
 .endif	; (VER=1) | (VER=2)
 .if VER=3
-	jmp	La8e7
+	tail	La8e7
 .endif	; VER=3
 
 
@@ -11368,7 +11388,7 @@ game_mode_msg_press_start:
 	jsr	La8b4
 	lda	#$00
 	ldx	#_msg_en_press_start ; "PRESS START"
-	jmp	vapp_msg_at_y
+	tail	vapp_msg_at_y
 
 
 
@@ -11384,7 +11404,7 @@ game_mode_msg_2_credit_minimum:
 	ldx	#_msg_en_insert_coins ; "INSERT COINS"
 	jsr	vapp_msg_at_y
 ?f1:
-	jmp	La8b4
+	tail	La8b4
 
 
 
@@ -11404,7 +11424,7 @@ Laa9e:
 	; Append 2 digits
 	lda	#L61
 	ldy	#1	; 1 pair of digits
-	jmp	vapp_digits
+	tail	vapp_digits
 
 
 
@@ -11417,7 +11437,7 @@ show_coin_stuff:
 	jsr	vapp_msg
 	dec	L016e
 	lda	optsw2_shadow
-	and	#$01 ; 2-credit minimum
+	and	#_optsw2_min_mask ; 2-credit minimum
 	beq	?f1
 	lda	timectr
 	and	#$20 ; flash
@@ -11497,8 +11517,7 @@ bin_to_bcd:
 vapp_vcentre_20:
 	lda	#$20
 	ldx	#_vg_opc_vcentre
-	jmp	vapp_A_X
-	.tail
+	tail	vapp_A_X
 
 
 
@@ -11650,7 +11669,7 @@ vapp_common:
 	; Adjust vidptr
 	ldy	L2a
 	dey
-	jmp	inc_vidptr
+	tail	inc_vidptr
 
 
 
@@ -11715,10 +11734,12 @@ init_hs:
 	and	#$03
 	beq	?f4
 	lda	optsw2_shadow
-	and	#$f8
+	; Mask out minimum credits and language, leaving points needed for
+	; extra life and initial lives
+	and	#(_optsw2_pts_needed_mask | _optsw2_init_lives_mask)
 	sta	life_settings
 	lda	diff_bits
-	and	#$03 ; difficulty
+	and	#_pokey2_sw_diff_mask	; difficulty
 	sta	diff_settings
 ?f4:
 	lda	hs_initflag
@@ -11750,12 +11771,14 @@ hs_init_t1:
 check_settings:
 	jsr	read_optsws
 	lda	optsw2_shadow
-	and	#$f8 ; initial lives & points per life
+	; Mask out minimum credits and language, leaving points needed for
+	; extra life and initial lives
+	and	#(_optsw2_pts_needed_mask | _optsw2_init_lives_mask)
 ;Lac20
 	cmp	life_settings
 	bne	?f1
 	lda	diff_bits
-	and	#$03 ; difficulty
+	and	#_pokey2_sw_diff_mask	; difficulty
 	cmp	diff_settings
 ?f1:
 	beq	hs_needs_init_f2
@@ -11929,7 +11952,7 @@ Lad22:
 	sty	game_state
 	rts
 ?f15:
-	jmp	Lad22
+	tail	Lad22
 ?f16:
 	sty	game_state
 	rts
@@ -12048,7 +12071,7 @@ game_mode_enter_initials:
 	lda	hs_whichletter
 	sec
 	sbc	L0604
-	jmp	Lae4e
+	tail	Lae4e
 
 
 
@@ -12213,7 +12236,7 @@ Laef8:
 	dec	L39
 	bpl	?b3
 	dey
-	jmp	inc_vidptr
+	tail	inc_vidptr
 
 
 
@@ -12274,7 +12297,7 @@ vapp_2dig_bin:
 	jsr	bin_to_bcd
 	lda	#L29	; Append value at L29
 	ldy	#1	; One pair of digits
-	jmp	vapp_digits
+	tail	vapp_digits
 
 
 
@@ -12492,7 +12515,7 @@ vapp_startbonus:
 	jsr	ld_startbonus
 	lda	#L29	; Append value at L29
 	ldy	#3	; 3 pairs of digits
-	jmp	vapp_digits
+	tail	vapp_digits
 
 
 
@@ -12504,7 +12527,7 @@ vapp_setcolor:
 	; append a vscale to the display list
 	; z and color from curcolor
 	lda	#_vg_sparkle_bit	; sparkle = 1
-	jmp	vapp_vstat_A_Y
+	tail	vapp_vstat_A_Y
 ?f1:
 	rts
 
@@ -12515,7 +12538,7 @@ vapp_setscale:
 	cmp	curscale
 	beq	?f1
 	sta	curscale	; b scale
-	jmp	vapp_scale_b
+	tail	vapp_scale_b
 ?f1:
 	rts
 
@@ -12670,8 +12693,7 @@ Lb15a:
 	jsr	vapp_msg_at_y
 	; Append a vjsr L3ff2 to the display list
 	ldax_im	L3ff2
-	jmp	vapp_vjsr_AX
-	.tail
+	tail	vapp_vjsr_AX
 
 
 
@@ -12741,7 +12763,7 @@ Lb1b6:
 	clv
 	bvc	?f10
 ?f9:
-	jmp	game_mode_initialize
+	tail	game_mode_initialize
 ?f10:
 	rts
 
@@ -13354,7 +13376,7 @@ draw_pending:
 ; End anti-piracy code.
 ?f9:
 	lda	#1	; b scale
-	jmp	vapp_scale_b
+	tail	vapp_scale_b
 
 
 
@@ -13510,7 +13532,7 @@ draw_tanker=?draw_tanker
 	tay
 	lda	?t2, y
 	ldy	enemy_seg, x
-	jmp	graphic_at_mid
+	tail	graphic_at_mid
 ; Graphic number for tankers.  Indexed by contents value (L028a bits $03).
 ?t2:
 	.byte	$1a
@@ -13531,7 +13553,7 @@ draw_spiker=?draw_spiker
 	clc
 ; Lb62b
 	adc	#$12
-	jmp	graphic_at_mid
+	tail	graphic_at_mid
 ; Not used; a table version of the value computed by Lb629-Lb62b.
 	.byte	$12
 	.byte	$14
@@ -13667,7 +13689,7 @@ draw_fuzzball=?draw_fuzzball
 	ldx	graphic_table + 1, y
 	lda	graphic_table, y
 	ldy	vidptr_offset		; at offset vidptr_offset
-	jmp	vapp_A_X_at_y
+	tail	vapp_A_X_at_y
 ?df_f2:
 	sta	L29
 	lda	L02cc, x
@@ -13876,7 +13898,7 @@ vapp_mid_graphic:
 	tay
 	ldx	graphic_table + 1, y
 	lda	graphic_table, y
-	jmp	vapp_A_X
+	tail	vapp_A_X
 ?t1:
 	.byte	$02
 	.byte	$02
@@ -14297,7 +14319,7 @@ Lbd09:
 	ldx	graphic_table + 1, y
 	lda	graphic_table, y
 	ldy	vidptr_offset		; offset into the display list
-	jmp	vapp_A_X_at_y
+	tail	vapp_A_X_at_y
 
 
 
@@ -14690,7 +14712,7 @@ Lbdcb:
 ?f22:
 	ldy	vidptr_offset
 	dey
-	jmp	inc_vidptr
+	tail	inc_vidptr
 
 ; Rotatable graphics values.
 ; These are indexed by graphic number:
@@ -15589,6 +15611,7 @@ Lc30d:
 	jsr	Lc3ee
 	dex
 	bpl	?b5
+; This draws the top and bottom rims of the tube
 	ldy	#_colidx_tubes
 	sty	curcolor	; z and color
 	lda	#$08		; sparkle
@@ -15751,7 +15774,7 @@ get_coords_from_table:
 	sta	y_out_l
 	lda	yout_h_array, x
 	sta	y_out_h
-	jmp	Lc3ba
+	tail	Lc3ba
 
 
 
@@ -15969,7 +15992,7 @@ Lc4e1:
 	dec	L38
 	bpl	?b2
 	lda	#1	; b scale
-	jmp	vapp_scale_b
+	tail	vapp_scale_b
 
 
 
@@ -16177,7 +16200,7 @@ Lc5c2:
 	sta	Laa
 	ldy	vidptr_offset
 	dey
-	jmp	inc_vidptr
+	tail	inc_vidptr
 ; These four bytes are byte-reversed video code.  The code is
 ; 6805  vstat z=0 c=5 sparkle=1
 ; 8040  vcentre
@@ -16412,7 +16435,7 @@ vcdtx_f1:
 	iny
 	sta	(vidptr), y
 
-	jmp	inc_vidptr
+	tail	inc_vidptr
 
 
 
@@ -16583,7 +16606,7 @@ game_state_countdown:
 	lda	#$00
 	sta	enable_countdown
 ?f2:
-	jmp	move_player
+	tail	move_player
 
 
 
@@ -16697,7 +16720,7 @@ Lc891:
 	bvs	?f7
 	; player dead :(
 	lda	optsw2_shadow
-	and	#$01 ; 2-credit-minimum bit
+	and	#_optsw2_min_mask ; 2-credit-minimum bit
 	beq	?f5
 	ldy	credits
 	bne	?f2
@@ -16810,7 +16833,7 @@ game_state_0:
 	lda	twoplayer
 	sta	curplayer
 	; Goto level selection menu
-	jmp	L90c4
+	tail	L90c4
 
 
 
@@ -16869,8 +16892,7 @@ game_state_attract:
 	lda	players_level, x
 	sta	curlevel
 	jsr	L9025
-	jmp	init_pokey
-	.tail
+	tail	init_pokey
 
 
 
@@ -16926,7 +16948,7 @@ game_state_get_level:
 	jsr	inc_score
 	jsr	sound_lives_added
 ?f2:
-	jmp	start_level
+	tail	start_level
 
 
 
@@ -17080,7 +17102,7 @@ setup_inverted:
 	; Normal operation is inverted Y and noninverted X
 
 	; Invert Y axis
-	ldy	#vid_coins_invert_y_mask
+	ldy	#_vid_coins_invert_y_mask
 	; Is this game a cocktail?
 	lda	flagbits
 	; No, branch
@@ -17095,7 +17117,7 @@ setup_inverted:
 
 	; Invert the X axis
 	lda	#_leds_flip_alt_cntrls
-	ldy	#vid_coins_invert_x_mask
+	ldy	#_vid_coins_invert_x_mask
 
 
 ?f1:
@@ -17593,7 +17615,7 @@ sample_6f:
 
 sound_Lccb0:
 	lda	#Lcb01_05_offset
-	jmp	play_sound_if_player
+	tail	play_sound_if_player
 
 ; This is the sound made when a player moves from one segment to another
 sound_segment_change:
@@ -18397,7 +18419,7 @@ check_coin_sw:	; interrupt code
 	bcc	?l4
 ?f3:
 	; Decrement the table entry
-	sbc	#$01
+	sbc	#1
 
 	; Save the new table entry value
 ?l4:
@@ -18410,13 +18432,13 @@ check_coin_sw:	; interrupt code
 
 	; Slam switch on
 	; Set slam timer
-	lda	#240
+	lda	#240	; IRQs are 246.1 Hz, so this should be approx. 1 second
 	sta	slam_timer
 ?l5:
 	lda	slam_timer
 	beq	?l6
 	dec	slam_timer
-	lda	#$00
+	lda	#0
 	sta	L0d, x
 	sta	L10, x
 ?l6:
@@ -19262,7 +19284,7 @@ language_base_tbl:
 read_optsws:
 	lda	optsw2
 	sta	optsw2_shadow
-	and	#$38 ; bonus life setting
+	and	#_optsw2_pts_needed_mask ; bonus life setting
 	lsr	a
 	lsr	a
 	lsr	a
@@ -19610,7 +19632,7 @@ game_mode_service:
 	dec	loopidx
 	bne	?loop
 	lda	diff_bits
-	and	#$03 ; difficulty
+	and	#_pokey2_sw_diff_mask	; difficulty
 	asl	a
 	tay
 
@@ -19696,14 +19718,16 @@ vapp_ldraw_YxX_2dig_A:
 	jsr	vapp_ldraw_XY
 	lda	#L29	; Append value at L29
 	ldy	#1	; 1 pair of digits
-	jmp	vapp_digits
+	tail	vapp_digits
+
+
 ; Magic button combinations for when test-mode switch is turned on live.
 ; 08 = zap, 10 = fire, 20 = start 1, 40 = start 2
 test_magic_bits:
-	.byte	pokey2_btn_fire_mask | pokey2_btn_zap_mask
-	.byte	pokey2_btn_fire_mask | pokey2_btn_zap_mask ; selftest
-	.byte	pokey2_btn_fire_mask | pokey2_btn_start1p_mask ; zero times
-	.byte	pokey2_btn_fire_mask | pokey2_btn_start2p_mask ; zero scores
+	.byte	_pokey2_btn_fire_mask | _pokey2_btn_zap_mask
+	.byte	_pokey2_btn_fire_mask | _pokey2_btn_zap_mask ; selftest
+	.byte	_pokey2_btn_fire_mask | _pokey2_btn_start1p_mask ; zero times
+	.byte	_pokey2_btn_fire_mask | _pokey2_btn_start2p_mask ; zero scores
 
 ; Coin-slot multiplier display values, two-digit BCD.  Indexed by the
 ; coin-slot multiplier bits in coinage_shadow.  These do not actually
@@ -19830,7 +19854,7 @@ ram_test_fail_2:
 	dex
 	txs
 	bpl	?b3
-	jmp	checksum_rom
+	tail	checksum_rom
 
 
 
@@ -19887,7 +19911,7 @@ ram_test_fail_nonzero:
 ; page. Since A should be in the range 1-$17, thus should be a no-op.
 
 	and	#$1f
-	jmp	ram_test_fail_2
+	tail	ram_test_fail_2
 
 
 
@@ -20480,7 +20504,7 @@ selftest_6:
 
 	; Append a vjsr vg_sub_image_box_around_screen to the display list
 	ldax_im	vg_sub_image_box_around_screen
-	jmp	vapp_vjsr_AX
+	tail	vapp_vjsr_AX
 
 
 
@@ -20536,7 +20560,7 @@ Ldb6b_v1:
 	ldy	#08
 	ldx	#04
 	lda	spinner_delta
-	jmp	vapp_ldraw_YxX_2dig_A
+	tail	vapp_ldraw_YxX_2dig_A
 
 
 
@@ -20577,18 +20601,22 @@ vapp_test_ibits_v1:
 
 
 
+; get_diff_bits_v1 and get_diff_bits_v2 are identical, just in different
+; locations
+
 
 ; Returns value with difficulty/rating bits in $07, something unknown
 ; ($20 bit of spinner/cabinet select byte) in $08.
 ; Uses loopidx as temporary storage.
+
 get_diff_bits_v1:
 	sta	pokey2_rescan
 	lda	pokey2_zap_fire_starts
-	and	#$07 ; difficulty/rating bits
+	and	#_pokey2_sw_diff_mask | _pokey2_btn_rating_mask	; difficulty/rating bits
 	sta	loopidx
 	sta	pokey1_rescan
 	lda	pokey1_spinner_cabtyp
-	and	#$20 ; Unknown
+	and	#_pokey1_unused_mask ; Unknown
 	lsr	a
 	lsr	a
 	ora	loopidx
@@ -20610,7 +20638,7 @@ selftest_5:
 .if VER=1
 	; Append a vjsr vg_sub_image_selftest_5 to the display list
 	ldax_im	vg_sub_image_selftest_5	; rectangular grid
-	jmp	vapp_vjsr_AX
+	tail	vapp_vjsr_AX
 .endif	; VER=1
 
 .if (VER=2) | (VER=3)
@@ -20642,7 +20670,7 @@ selftest_4: ; v1
 	jsr	zero_pokey_sound
 	; Append a vjsr vg_sub_image_selftest_4 to the display list
 	ldax_im	vg_sub_image_selftest_4	; colored lines
-	jmp	vapp_vjsr_AX
+	tail	vapp_vjsr_AX
 
 
 
@@ -20650,7 +20678,7 @@ selftest_2: ; v1
 	jsr	zero_pokey_sound
 	; Append a vjsr vg_sub_image_selftest_2 to the display list
 	ldax_im	vg_sub_image_selftest_2	; diagonal grid
-	jmp	vapp_vjsr_AX
+	tail	vapp_vjsr_AX
 
 .endif ; VER=1
 
@@ -20674,9 +20702,6 @@ selftest_3:
 	sta	pokey1_audc1, y
 	; Append a vjsr vg_sub_image_crosshair to the display list
 	ldax_im	vg_sub_image_crosshair
-.if VER=1
-	jmp	vapp_vjsr_AX
-.endif	; VER=1
 .if (VER=2) | (VER=3)
 	jsr	vapp_vjsr_AX
 	lda	timectr
@@ -20685,8 +20710,8 @@ selftest_3:
 	lda	#1
 	jsr	vapp_scale_lb
 	ldax_im	L34aa
-	jmp	vapp_vjsr_AX
 .endif ; (VER=2) | (VER=3)
+	tail	vapp_vjsr_AX
 
 
 ; Selftest sound table of some sort - see Ldba7
@@ -20706,17 +20731,21 @@ selftest_3:
 .if (VER=2) | (VER=3)
 	.byte	$ea
 
+; get_diff_bits_v1 and get_diff_bits_v2 are identical, just in different
+; locations
+
 ; Returns value with difficulty/rating bits in $07, something unknown
 ; ($20 bit of spinner/cabinet select byte) in $08.
 ; Uses loopidx as temporary storage.
+
 get_diff_bits_v2:
 	sta	pokey2_rescan
 	lda	pokey2_zap_fire_starts
-	and	#$07 ; difficulty/rating bits
+	and	#_pokey2_sw_diff_mask | _pokey2_btn_rating_mask	; difficulty/rating bits
 	sta	loopidx
 	sta	pokey1_rescan
 	lda	pokey1_spinner_cabtyp
-	and	#$20 ; Unknown
+	and	#_pokey1_unused_mask	; Unknown
 	lsr	a
 	lsr	a
 	ora	loopidx
@@ -20827,7 +20856,7 @@ selftest_1: ; v1
 	jsr	vapp_vjsr_AX
 	ldy	#$10
 	lda	zap_fire_debounce
-	and	#pokey2_btn_start1p_mask | pokey2_btn_start2p_mask
+	and	#_pokey2_btn_start1p_mask | _pokey2_btn_start2p_mask
 	beq	?f12
 	eor	#$20
 	beq	?f1
@@ -20909,7 +20938,7 @@ selftest_1: ; v1
 	lda	spinner_cosine, y
 	ldx	spinner_sine, y
 	ldy	#$c0
-	jmp	vapp_ldraw_XYZ
+	tail	vapp_ldraw_XYZ
 .endif	; (VER=2) | (VER=3)
 
 
@@ -21451,7 +21480,7 @@ Lde1b:
 	sty	earom_ctrl
 	tya
 	bne	?f16
-	jmp	Lde1b
+	tail	Lde1b
 ?f16:
 	rts
 
@@ -21495,7 +21524,7 @@ vapp_vhalt:
 vapp_halt_f1:
 	ldy	#0
 	sta	(vidptr), y
-	jmp	Ldfac
+	tail	Ldfac
 
 
 
@@ -21594,7 +21623,7 @@ vapp_vstat_A_Y:
 	ora	#_vg_opc_vstat
 	tax
 	tya
-	jmp	vapp_A_X
+	tail	vapp_A_X
 
 
 
@@ -21688,7 +21717,7 @@ vapp_scale_lb:
 	ora	#_vg_opc_vscale
 	tax
 	tya
-	jmp	vapp_A_X
+	tail	vapp_A_X
 
 
 ;
