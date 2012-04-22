@@ -313,6 +313,8 @@ curlevel_red		=	17
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+_pokey_nchans	=	8
+
 ;;;
 ;;; Pokey 1 register addresses
 ;;;
@@ -790,14 +792,16 @@ nowhere	=	1
 ; Not in selftest (see table at Lc7da):
 ; $00 = entered briefly at game startup
 ; $02 = entered briefly at the beginning of first level of a game
-; $04 = playing (including attract mode)
+; $04 = playing (including attract mode) "PRESS START" blinking
 ; $06 = entered briefly on player death (game-ending or not)
 ; $08 = set briefly at the beginning of each level?
 ; $0a = high-score, logo screen, AVOID SPIKES (etc?)
 ;       AVOID SPIKES: $1e->$04, $0a->game_state, $20->$02, $80->$0123
 ; $0c = unused? (jump table holds $0000)
 ; $0e = entered briefly when zooming off the end of a level
+; $10 = countdown; next state in next_game_state
 ; $12 = entering initials
+; $14 = logo zoom
 ; $16 = starting level selection screen
 ; $18 = zooming new level in
 ; $1a = unknown
@@ -1290,7 +1294,7 @@ enemies_top:	.res	1		; 109
 
 pcode_run:	.res	1		; 10a
 pcode_pc:	.res	1		; 10b
-L010c:		.res	1		; 10c
+pcode_test:	.res	1		; 10c
 L010d:		.res	1		; 10d
 L010e:		.res	1		; 10e
 L010f:		.res	1		; 10f
@@ -1502,15 +1506,15 @@ earom_blkend:	.res	1			; 01cd
 
 L01ce:		.res	1			; 01ce
 
-; Checksum of block being currently read or written.
+; Checksum of earom block being currently read or written.
 
 earom_cksum:	.res	1			; 01cf
 
 ; End of CPU stack. Interrupt handler will issue a BREAK it sees the stack 
 ; grow beyond this point.
-		.res	47
-; Start of CPU stack (grows downwards towards 01D0)
-L01ff:		.res	1
+stack_end:	.res	47
+; Start of CPU stack (grows downwards towards stack_end)
+stack_start:	.res	1
 
 ;;;
 ;;; page 2
@@ -1898,7 +1902,10 @@ life_settings:	.res	1
 ; and the high-score list is cleared.
 ; See Lac20.
 diff_settings:	.res	1
-L0720:		.res	1
+
+
+
+pokey_piracy_detected2:		.res	1
 	.res	223
 
 
@@ -8742,7 +8749,7 @@ q_halt		=	* - L9ba2_t1
 q_ldi		=	* - L9ba2_t1
 	.jump	p_ldi ; 02 = next byte -> p_var, x
 q_sk_f0		=	* - L9ba2_t1
-	.jump	p_sk_f0 ; 04 = if L010c holds zero, skip next two bytes
+	.jump	p_sk_f0 ; 04 = if pcode_test holds zero, skip next two bytes
 q_br		=	* - L9ba2_t1
 	.jump	p_br	; 06 = unconditional branch
 q_dec_bnz	=	* - L9ba2_t1
@@ -8765,9 +8772,9 @@ q_rev		=	* - L9ba2_t1
 q_chk		=	* - L9ba2_t1
 	.jump	p_chk ; 18 = check and maybe grab player
 q_br_f0		=	* - L9ba2_t1
-	.jump	p_br_f0 ; 1a = if L010c == 0, branch
+	.jump	p_br_f0 ; 1a = if pcode_test == 0, branch
 q_spike		=	* - L9ba2_t1
-	.jump	p_spike ; 1c = enemy-above-spike? -> L010c
+	.jump	p_spike ; 1c = enemy-above-spike? -> pcode_test
 q_fuzz		=	* - L9ba2_t1
 	.jump	p_fuzz ; 1e = fuzzball movement?
 q_touch		=	* - L9ba2_t1
@@ -8860,18 +8867,30 @@ q_chk_pulse	=	* - L9ba2_t1
 	.byte	q_chk_pulse
 	.endmac
 
+; pcode: halt
 
 p_halt:
 	lda	#$00
 	sta	pcode_run
+	.fall	p_nop
+
+; pcode: no-op
+
 p_nop:
 	rts
+
+; pcode: load immediate: next byte -> p_var [x]
+
 p_ldi:
 	inc	pcode_pc
 	ldy	pcode_pc
 	lda	m_origin, y
 	sta	p_var, x
 	rts
+
+
+; pcode: load memory: memory [* pc ++] -> p_var [x]
+
 p_ldm:
 	inc	pcode_pc
 	ldy	pcode_pc
@@ -8880,36 +8899,52 @@ p_ldm:
 	lda	page0, y
 	sta	p_var, x
 	rts
+
+; pcode: skip 2 bytes if pcode_test == 0
+
 p_sk_f0:
-	lda	L010c
+	lda	pcode_test
 	bne	?f1
 	inc	pcode_pc
 	inc	pcode_pc
 ?f1:
 	rts
+
+
+; pcode: branch if pcode_test == 0
+
 p_br_f0:
 	inc	pcode_pc
-	lda	L010c
+	lda	pcode_test
 	bne	?f2
 	ldy	pcode_pc
 	lda	m_origin, y
 	sta	pcode_pc
 ?f2:
 	rts
+
+; pcode: decrement p_var [x], branch if not zero
+
 p_dec_bnz:
 	dec	p_var, x
 	bne	p_br
 	inc	pcode_pc
 	clv
 	bvc	p_dec_bnz_f3
+	.fall	p_br
+
+; pcode: branch
+
 p_br:
 	ldy	pcode_pc
 	lda	m_origin + 1, y
 	sta	pcode_pc
 p_dec_bnz_f3:
 	rts
-; Set L010c to 1 if the enemy is above the end of its segment's spike,
-; 0 if not.
+
+; pcode: Set pcode_test to 1 if the enemy is above the end of its 
+; segment's spike, 0 if not.
+
 p_spike:
 	ldy	enemy_seg, x
 	lda	spike_ht, y
@@ -8918,16 +8953,18 @@ p_spike:
 ?f4:
 	cmp	enemy_along, x
 	bcs	?f5
-	lda	#$00
+	lda	#0
 	clv
 	bvc	?f6
 ?f5:
-	lda	#$01
+	lda	#1
 ?f6:
-	sta	L010c
+	sta	pcode_test
 	rts
-; Set L010c to $80 if we're pulsing now, or we will be four ticks in the
-; future, or to $00 if not.
+
+; pcode: Set pcode_test to $80 if we're pulsing now, or we will be four ticks 
+; in the future, or to 0 if not.
+
 p_chk_pulse:
 	lda	pulse_beat
 	asl	a
@@ -8937,14 +8974,20 @@ p_chk_pulse:
 	and	pulsing
 	and	#$80
 	eor	#$80
-	sta	L010c
+	sta	pcode_test
 	rts
+
+; pcode: reverse direction
+
 p_rev:
 	; Get enemy movement style and set it to ??????
 	lda	enemy_movement_style, x
 	eor	#$40
 	sta	enemy_movement_style, x
 	rts
+
+; pcode: move
+
 p_move:
 	; Get enemy movement style and set it to upwards movement only.
 	lda	enemy_movement_style, x
@@ -9221,7 +9264,7 @@ p_flip_cont:
 ?f32:
 	lda	enemy_movement_style, x
 	and	#$80
-	sta	L010c
+	sta	pcode_test
 	rts
 
 p_chk:	lda	enemy_movement_style, x
@@ -9480,7 +9523,7 @@ L9f8a_f4:
 
 p_grow:
 	lda	#$01
-	sta	L010c
+	sta	pcode_test
 	ldy	enemy_seg, x
 	lda	spike_ht, y
 	bne	?f1
@@ -9522,7 +9565,7 @@ p_grow:
 	ora	#$02
 	sta	enemy_movement_style, x
 	lda	#$00
-	sta	L010c
+	sta	pcode_test
 ?f4:
 	rts
 
@@ -9673,7 +9716,7 @@ m_l0d:
 m_l12:
 	m_halt			; 12: done
 	m_flip_cont		; 13: continue/end flip
-	m_sk_f0			; 14: if L010c == 0, skip to 17
+	m_sk_f0			; 14: if pcode_test == 0, skip to 17
 	m_br	m_l12		; 15: branch to $12
 	m_br	m_l0b		; 17: branch to $0b
 
@@ -9687,7 +9730,7 @@ m_l1c:
 	m_halt			; 1c: done
 	m_flip_cont		; 1d: continue/end flip
 	m_move			; 1e: move per speed
-	m_sk_f0			; 1f: if L010c == 0, skip to 22
+	m_sk_f0			; 1f: if pcode_test == 0, skip to 22
 	m_br	m_l1c		; 20: branch to $1c
 	m_br	m_l19		; 22: branch to $19
 
@@ -9705,7 +9748,7 @@ m_l29:
 	m_halt			; 29: done
 	m_flip_cont		; 2a: continue/end flip
 	m_move			; 2b: move per speed
-	m_sk_f0			; 2c: if L010c == 0, skip to 2f
+	m_sk_f0			; 2c: if pcode_test == 0, skip to 2f
 	m_br	m_l29		; 2d: branch to $29
 	m_halt			; 2f: done
 	m_dec_bnz	m_l28	; 30: if --p_var, x then branch to $28
@@ -9717,7 +9760,7 @@ m_l36:
 	m_halt			; 36: done
 	m_flip_cont		; 37: continue/end flip
 	m_move			; 38: move per speed
-	m_sk_f0			; 39: if L010c == 0, skip to 3c
+	m_sk_f0			; 39: if pcode_test == 0, skip to 3c
 	m_br	m_l36		; 3a: branch to $36
 	m_halt			; 3c: done
 	m_dec_bnz	m_l35	; 3d: if --p_var, x then branch to $35
@@ -9739,7 +9782,7 @@ m_l49:
 	m_ldm	flip_top_accel	; 4a: flip_top_accel -> p_var, x $b3
 m_l4c:
 	m_flip_cont		; 4c: continue/end flip
-	m_br_f0	m_l42		; 4d: if L010c == 0, branch to $42
+	m_br_f0	m_l42		; 4d: if pcode_test == 0, branch to $42
 	m_dec_bnz	m_l4c	; 4f: if --p_var, x then branch to $4c
 	m_br	m_l49		; 51: branch to $49
 
@@ -9749,14 +9792,14 @@ m_l4c:
 m_l53:
 	m_halt			; 53: done
 	m_move			; 54: move per speed
-	m_spike			; 55: set L010c to enemy-above-spike-p
-	m_br_f0	m_l53		; 56: if L010c == 0, branch to $53
+	m_spike			; 55: set pcode_test to enemy-above-spike-p
+	m_br_f0	m_l53		; 56: if pcode_test == 0, branch to $53
 	m_flip_start		; 58: start flip
 	m_halt			; 59: done
 	m_move			; 5a: move per speed
 m_l5b:
 	m_flip_cont		; 5b: continue/end flip
-	m_br_f0	m_l53		; 5c: if L010c == 0, branch to $53
+	m_br_f0	m_l53		; 5c: if pcode_test == 0, branch to $53
 	m_halt			; 5e: done
 	m_br	m_l5b		; 5f: branch to $5b
 
@@ -9778,7 +9821,7 @@ m_l69:
 	m_halt			; 6a: done
 	m_dec_bnz	m_l69	; 6b: if --p_var, x then branch to $69
 	m_flip_cont		; 6d: continue/end flip
-	m_br_f0	m_l_fuzzball		; 6e: if L010c == 0, branch to $61
+	m_br_f0	m_l_fuzzball		; 6e: if pcode_test == 0, branch to $61
 	m_br	m_l66		; 70: branch to $66
 
 ; Pulsar entry point.
@@ -9801,7 +9844,7 @@ m_l7f:
 m_l81:
 	m_halt			; 81: done
 	m_flip_cont		; 82: continue/end flip
-	m_br_f0	m_l_pulsar		; 83: if L010c == 0, branch to $72
+	m_br_f0	m_l_pulsar		; 83: if pcode_test == 0, branch to $72
 	m_br	m_l81		; 85: branch to $81
 
 ; Flipper entry point: flip away from player, move four ticks, repeat.
@@ -9815,7 +9858,7 @@ m_l8a:
 	m_halt			; 8a: done
 	m_move			; 8b: move per speed
 	m_flip_cont		; 8c: continue/end flip
-	m_sk_f0			; 8d: if L010c == 0, skip to 90
+	m_sk_f0			; 8d: if pcode_test == 0, skip to 90
 	m_br	m_l8a		; 8e: branch to $8a
 	m_ldi	4		; 90: store in p_var, x 91: 04
 m_l92:
@@ -13845,13 +13888,25 @@ draw_explosions:
 ?f4:
 	dec	loopidx
 	bpl	?loop
-	lda	L0720
+
+
+
+; Anti-piracy code
+
+; If piracy was detected, and the level is > 13, corrupt the stack
+	lda	pokey_piracy_detected2
 	beq	?f5
 	lda	curlevel
-	cmp	#$0d
+	cmp	#13
 	bcc	?f5
-	sta	L01ff
+.if PIRATE=0
+	sta	stack_start
+.endif
+
 ?f5:
+
+; End anti-piracy code
+
 	rts
 ?t1:
 	.byte	$00
@@ -17632,7 +17687,7 @@ sound_enemy_fire:
 
 sound_Lccc1:
 	lda	#Lcb01_01_offset
-	;.fall	play_sound_if_player
+	.fall	play_sound_if_player
 
 
 ;
@@ -18072,11 +18127,15 @@ update_sounds:	; interrupt code
 
 ; Commented in another disassembly as pokey initialization
 init_pokey:
-	lda	#$00
+	lda	#0
 	sta	pokey1_skctls
 	sta	pokey2_skctls
-	sta	L0720
-	ldx	#$04
+
+
+; Piracy detection code. 
+
+	sta	pokey_piracy_detected2
+	ldx	#4
 	lda	pokey1_rand	; Randomize A
 	ldy	pokey2_rand	; Randomize Y
 ?b1:
@@ -18085,19 +18144,22 @@ init_pokey:
 	cpy	pokey2_rand	; cmp Y with rand number
 ?f2:
 	beq	?f3		; 1/255 chance of branching
-	sta	L0720
-	ldx	#$00
+	sta	pokey_piracy_detected2
+	ldx	#0
 ?f3:
 	dex
 	bpl	?b1
+
+; End piracy detection code
+
 	; Enable sound and fast potentiometer scanning on pokey
-	lda	#$07
+	lda	#pokey_skctls_setup
 	sta	pokey1_skctls
 	sta	pokey2_skctls
 
 	; Zero out volume/distortion and pitch for all cchannels on both pokeys
-	ldx	#$07
-	lda	#$00
+	ldx	#_pokey_nchans - 1
+	lda	#0
 ?b4:
 	sta	pokey1, x
 	sta	pokey2, x
@@ -18107,9 +18169,9 @@ init_pokey:
 	bpl	?b4
 
 	; Clear the master control register (AUDCTL) on both pokeys
-	lda	#$00
+	lda	#0
 	sta	pokey1_audctl
-	lda	#$00
+	lda	#0
 	sta	pokey2_audctl
 
 	rts
@@ -21352,7 +21414,7 @@ Lde1b:
 	bne	?f4a
 	lda	L01c7
 	beq	?f4a
-	ldx	#$00
+	ldx	#0
 ;Lde27
 	stx	earom_blkoff
 	stx	earom_cksum
@@ -21360,7 +21422,7 @@ Lde1b:
 ; This loop finds the highest bit in A and leaves it in L01ce - the bcc
 ; tests the C bit set by the asl; the dex doesn't touch C.  It also leaves
 ; the bit number of this bit in X (0 to 2, since A is $0-$7).
-	ldx	#$08
+	ldx	#8
 	sec
 ?b4:
 	ror	L01ce
